@@ -488,7 +488,7 @@
                     <circle cx="11" cy="11" r="8"></circle>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                   </svg>
-                  Inspect Repositories
+                  <span id="btnInspectRepoText">Trigger / Inspect Repositories</span>
                 </button>
               </div>
             </div>
@@ -504,7 +504,7 @@
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                     <circle cx="9" cy="7" r="4"></circle>
                   </svg>
-                  Scan Groups & Members
+                  Trigger / Scan Members
                 </button>
               </div>
             </div>
@@ -525,7 +525,7 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
                   </svg>
-                  Search Activity
+                  Trigger / Search Activity
                 </button>
               </div>
             </div>
@@ -552,7 +552,7 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <polygon points="5 3 19 12 5 21 5 3"></polygon>
                   </svg>
-                  Fetch Runs
+                  Trigger / Fetch Runs
                 </button>
               </div>
             </div>
@@ -568,7 +568,7 @@
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                   </svg>
-                  Query Work Items
+                  Trigger / Query Work Items
                 </button>
               </div>
             </div>
@@ -587,7 +587,7 @@
                     <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
                     <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
                   </svg>
-                  Scan Agent Pools
+                  Trigger / Scan Agent Pools
                 </button>
               </div>
             </div>
@@ -610,7 +610,7 @@
                     <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
                     <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
                   </svg>
-                  Scan Endpoints
+                  Trigger / Scan Endpoints
                 </button>
               </div>
             </div>
@@ -1021,7 +1021,14 @@
                       <th>COMMIT MESSAGE</th>
                     </tr>
                   </thead>
-                  <tbody id="branchesTableBody"></tbody>
+                  <tbody id="branchesTableBody">
+                    <tr>
+                      <td colspan="7" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        Select a repository scope and click <strong>"Trigger / Inspect Repositories"</strong> button above to load branch details.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               <div id="seeMoreRepoContainer" class="pagination-footer hidden">
@@ -1045,7 +1052,14 @@
                       <th>STATUS</th>
                     </tr>
                   </thead>
-                  <tbody id="policyTableBody"></tbody>
+                  <tbody id="policyTableBody">
+                    <tr>
+                      <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        Select a repository scope and click <strong>"Trigger / Inspect Policies"</strong> button above to load branch policies.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
             </section>
@@ -1065,7 +1079,14 @@
                       <th>CREATED DATE</th>
                     </tr>
                   </thead>
-                  <tbody id="repoPrsTableBody"></tbody>
+                  <tbody id="repoPrsTableBody">
+                    <tr>
+                      <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>
+                        Select a repository scope and click <strong>"Trigger / Inspect PRs"</strong> button above to load pull requests.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               <div id="seeMoreRepoPrsContainer" class="pagination-footer hidden">
@@ -1098,7 +1119,14 @@
                       <th>USER PRINCIPAL / EMAIL</th>
                     </tr>
                   </thead>
-                  <tbody id="accessTableBody"></tbody>
+                  <tbody id="accessTableBody">
+                    <tr>
+                      <td colspan="5" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+                        Specify a user query (or leave blank for all) and click <strong>"Trigger / Scan Members"</strong> button above to load permissions.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               <div id="seeMoreAccessContainer" class="pagination-footer hidden">
@@ -1121,7 +1149,14 @@
                       <th>MESSAGE / CHANGES</th>
                     </tr>
                   </thead>
-                  <tbody id="userCommitsTableBody"></tbody>
+                  <tbody id="userCommitsTableBody">
+                    <tr>
+                      <td colspan="5" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                        Enter a user email and timeframe, then click <strong>"Trigger / Search Activity"</strong> button above to load commit history.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               <div id="seeMoreCommitsContainer" class="pagination-footer hidden">
@@ -1145,7 +1180,13 @@
                         <th>CREATION DATE</th>
                       </tr>
                     </thead>
-                    <tbody id="userPrTableBody"></tbody>
+                    <tbody id="userPrTableBody">
+                      <tr>
+                        <td colspan="5" style="padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 12px;">
+                          No pull request activity loaded. Click <strong>"Trigger / Search Activity"</strong> button above to inspect.
+                        </td>
+                      </tr>
+                    </tbody>
                   </table>
                 </div>
               </div>
@@ -1172,7 +1213,7 @@
                     <tr>
                       <td colspan="8" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                        Select your Runs Scope and click <strong>"Fetch Runs"</strong> button above to load pipeline details.
+                        Select your Runs Scope and click <strong>"Trigger / Fetch Runs"</strong> button above to load pipeline details.
                       </td>
                     </tr>
                   </tbody>
@@ -1199,7 +1240,14 @@
                       <th>CREATED DATE</th>
                     </tr>
                   </thead>
-                  <tbody id="workItemsTableBody"></tbody>
+                  <tbody id="workItemsTableBody">
+                    <tr>
+                      <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        Specify an assigned user (or leave blank for all) and click <strong>"Trigger / Query Work Items"</strong> button above to load backlog items.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               <div id="seeMoreWorkItemsContainer" class="pagination-footer hidden">
@@ -1223,7 +1271,14 @@
                       <th>POOL ID</th>
                     </tr>
                   </thead>
-                  <tbody id="agentPoolsTableBody"></tbody>
+                  <tbody id="agentPoolsTableBody">
+                    <tr>
+                      <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect></svg>
+                        Select a pool type and click <strong>"Trigger / Scan Agent Pools"</strong> button above to load agent pools & queues.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               <div id="seeMoreAgentPoolsContainer" class="pagination-footer hidden">
@@ -1247,7 +1302,14 @@
                       <th>STATUS / HEALTH</th>
                     </tr>
                   </thead>
-                  <tbody id="serviceConnectionsTableBody"></tbody>
+                  <tbody id="serviceConnectionsTableBody">
+                    <tr>
+                      <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                        Select a service type and click <strong>"Trigger / Scan Endpoints"</strong> button above to load service connections.
+                      </td>
+                    </tr>
+                  </tbody>
                 </table>
               </div>
               <div id="seeMoreServiceConnectionsContainer" class="pagination-footer hidden">

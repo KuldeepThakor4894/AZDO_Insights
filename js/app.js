@@ -348,7 +348,9 @@ window.HubApp = {
         const view = e.currentTarget.dataset.view;
         if (view) {
           self.switchView(view);
-          self.triggerActiveInspect();
+          if (view === 'dashboard') {
+            self.execDashboardFetch();
+          }
         }
       });
     });
@@ -360,6 +362,7 @@ window.HubApp = {
     document.getElementById('btnFetchPipelines')?.addEventListener('click', () => self.execPipelineFetch());
     document.getElementById('btnFetchWorkItems')?.addEventListener('click', () => self.execWorkItemsFetch());
     document.getElementById('btnFetchAgentPools')?.addEventListener('click', () => self.execAgentPoolsFetch());
+    document.getElementById('btnFetchServiceConnections')?.addEventListener('click', () => self.execServiceConnectionsFetch());
     document.getElementById('btnMoreServiceConnections')?.addEventListener('click', () => window.ServiceConnectionModule.render(true));
 
     // Quick Action Bar Buttons in Card Header
@@ -1018,8 +1021,107 @@ window.HubApp = {
       console.warn('Repository caching notice:', err);
     }
 
-    // Auto-inspect or refresh currently selected view
+    // Reset data tables to placeholder prompts for the newly selected project
+    this.resetTablePlaceholders();
+
+    // Auto-inspect or refresh currently selected view (dashboard only)
     this.switchView(this.currentView, true);
+  },
+
+  resetTablePlaceholders() {
+    const setHtml = (id, html) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = html;
+    };
+
+    setHtml('branchesTableBody', `
+      <tr>
+        <td colspan="7" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          Select a repository scope and click <strong>"Trigger / Inspect Repositories"</strong> button above to load branch details.
+        </td>
+      </tr>
+    `);
+
+    setHtml('policyTableBody', `
+      <tr>
+        <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          Select a repository scope and click <strong>"Trigger / Inspect Policies"</strong> button above to load branch policies.
+        </td>
+      </tr>
+    `);
+
+    setHtml('repoPrsTableBody', `
+      <tr>
+        <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>
+          Select a repository scope and click <strong>"Trigger / Inspect PRs"</strong> button above to load pull requests.
+        </td>
+      </tr>
+    `);
+
+    setHtml('accessTableBody', `
+      <tr>
+        <td colspan="5" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
+          Specify a user query (or leave blank for all) and click <strong>"Trigger / Scan Members"</strong> button above to load permissions.
+        </td>
+      </tr>
+    `);
+
+    setHtml('userCommitsTableBody', `
+      <tr>
+        <td colspan="5" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          Enter a user email and timeframe, then click <strong>"Trigger / Search Activity"</strong> button above to load commit history.
+        </td>
+      </tr>
+    `);
+
+    setHtml('userPrTableBody', `
+      <tr>
+        <td colspan="5" style="padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 12px;">
+          No pull request activity loaded. Click <strong>"Trigger / Search Activity"</strong> button above to inspect.
+        </td>
+      </tr>
+    `);
+
+    setHtml('pipelineTableBody', `
+      <tr>
+        <td colspan="8" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+          Select your Runs Scope and click <strong>"Trigger / Fetch Runs"</strong> button above to load pipeline details.
+        </td>
+      </tr>
+    `);
+
+    setHtml('workItemsTableBody', `
+      <tr>
+        <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+          Specify an assigned user (or leave blank for all) and click <strong>"Trigger / Query Work Items"</strong> button above to load backlog items.
+        </td>
+      </tr>
+    `);
+
+    setHtml('agentPoolsTableBody', `
+      <tr>
+        <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect></svg>
+          Select a pool type and click <strong>"Trigger / Scan Agent Pools"</strong> button above to load agent pools & queues.
+        </td>
+      </tr>
+    `);
+
+    setHtml('serviceConnectionsTableBody', `
+      <tr>
+        <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+          Select a service type and click <strong>"Trigger / Scan Endpoints"</strong> button above to load service connections.
+        </td>
+      </tr>
+    `);
   },
 
   switchView(viewKey, forceReload = false) {
@@ -1055,6 +1157,18 @@ window.HubApp = {
         ['substepRepo', 'substepAccess', 'substepActivity', 'substepPipelines', 'substepWorkItems', 'substepAgentPools', 'substepServiceConnections'].forEach(id => {
           document.getElementById(id)?.classList.toggle('hidden', id !== config.substepId);
         });
+
+        // Contextual trigger button label for shared repo substep
+        const btnRepoText = document.getElementById('btnInspectRepoText');
+        if (btnRepoText) {
+          if (viewKey === 'policies') {
+            btnRepoText.textContent = 'Trigger / Inspect Policies';
+          } else if (viewKey === 'prs') {
+            btnRepoText.textContent = 'Trigger / Inspect PRs';
+          } else {
+            btnRepoText.textContent = 'Trigger / Inspect Repositories';
+          }
+        }
       } else {
         filterContainer.classList.add('hidden');
       }
@@ -1078,20 +1192,28 @@ window.HubApp = {
       document.getElementById(id)?.classList.toggle('hidden', id !== `view-${viewKey}`);
     });
 
-    // Trigger auto-fetch if project is selected
-    if (project && forceReload) {
+    // Trigger auto-fetch ONLY when on dashboard overview
+    if (project && forceReload && this.currentView === 'dashboard') {
       this.triggerActiveInspect();
     }
   },
 
-  triggerActiveInspect() {
+  validateProjectSelection() {
     const project = document.getElementById('projectSelect')?.value;
     if (!project) {
-      return this.showModal('Please select an Azure DevOps Project first using the Project selector.');
+      this.showModal('Please select an Azure DevOps Project first using the Project selector.');
+      return null;
     }
     if (!this.isUserAuthorizedForProject(project)) {
-      return this.showModal(`Access Denied: You are not an authorized member of project "${project}". You only have permission to view projects you are assigned to.`);
+      this.showModal(`Access Denied: You are not an authorized member of project "${project}". You only have permission to view projects you are assigned to.`);
+      return null;
     }
+    return project;
+  },
+
+  triggerActiveInspect() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
 
     switch (this.currentView) {
       case 'overallwork':
@@ -1109,7 +1231,7 @@ window.HubApp = {
         this.execActivityFetch();
         break;
       case 'pipelines':
-        // Only load when user explicitly clicks "Fetch Runs" button
+        this.execPipelineFetch();
         break;
       case 'workitems':
         this.execWorkItemsFetch();
@@ -1127,11 +1249,13 @@ window.HubApp = {
   },
 
   async execRepoInspect() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
     try {
       this.setStatus('Inspecting repository branches and branch policies...', 'info');
       await window.RepoModule.inspect(
         this.getOrg(),
-        document.getElementById('projectSelect').value,
+        project,
         this.getPat(),
         document.getElementById('repoSelect')?.value || '-- All Repositories --',
         this.cachedRepos
@@ -1141,11 +1265,13 @@ window.HubApp = {
   },
 
   async execAccessFetch() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
     try {
       this.setStatus('Scanning security groups and identities...', 'info');
       await window.AccessModule.fetch(
         this.getOrg(),
-        document.getElementById('projectSelect').value,
+        project,
         this.getPat(),
         document.getElementById('targetAccessUserQuery')?.value.trim() || ''
       );
@@ -1154,16 +1280,18 @@ window.HubApp = {
   },
 
   async execActivityFetch() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
     try {
       this.setStatus('Scanning user activity and commit history...', 'info');
       if (!this.cachedRepos.length) {
         const auth = 'Basic ' + btoa(':' + this.getPat());
-        const data = await this.fetchAdo(this.getOrg(), `${encodeURIComponent(document.getElementById('projectSelect').value)}/_apis/git/repositories?api-version=7.1-preview.1`, auth);
+        const data = await this.fetchAdo(this.getOrg(), `${encodeURIComponent(project)}/_apis/git/repositories?api-version=7.1-preview.1`, auth);
         this.cachedRepos = data.value || [];
       }
       await window.ActivityModule.fetch(
         this.getOrg(),
-        document.getElementById('projectSelect').value,
+        project,
         this.getPat(),
         document.getElementById('targetUserQuery')?.value.trim() || '',
         parseInt(document.getElementById('userTimeframeDays')?.value || '90', 10),
@@ -1174,11 +1302,13 @@ window.HubApp = {
   },
 
   async execPipelineFetch() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
     try {
       this.setStatus('Fetching pipeline runs & linked release deployments...', 'info');
       await window.PipelineModule.fetch(
         this.getOrg(),
-        document.getElementById('projectSelect').value,
+        project,
         this.getPat(),
         document.getElementById('pipelineRunsTop')?.value || '50',
         document.getElementById('pipelineDeploymentFilter')?.value || 'all'
@@ -1188,11 +1318,13 @@ window.HubApp = {
   },
 
   async execWorkItemsFetch() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
     try {
       this.setStatus('Querying work items with WIQL engine...', 'info');
       await window.WorkItemModule.fetch(
         this.getOrg(),
-        document.getElementById('projectSelect').value,
+        project,
         this.getPat(),
         document.getElementById('targetWorkItemUser')?.value.trim() || ''
       );
@@ -1201,11 +1333,13 @@ window.HubApp = {
   },
 
   async execAgentPoolsFetch() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
     try {
       this.setStatus('Scanning agent pools & queues for project...', 'info');
       await window.AgentPoolModule.fetch(
         this.getOrg(),
-        document.getElementById('projectSelect').value,
+        project,
         this.getPat(),
         document.getElementById('agentPoolTypeSelect')?.value || 'all'
       );
@@ -1214,11 +1348,13 @@ window.HubApp = {
   },
 
   async execServiceConnectionsFetch() {
+    const project = this.validateProjectSelection();
+    if (!project) return;
     try {
       this.setStatus('Scanning service connections & endpoints for project...', 'info');
       await window.ServiceConnectionModule.fetch(
         this.getOrg(),
-        document.getElementById('projectSelect').value,
+        project,
         this.getPat(),
         document.getElementById('scTypeSelect')?.value || 'all',
         document.getElementById('targetScQuery')?.value.trim() || ''
