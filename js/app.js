@@ -75,6 +75,44 @@ window.BladeController = {
     document.getElementById('bladeTabStages')?.classList.toggle('hidden', !showStages);
     document.getElementById('bladeTabLogs')?.classList.toggle('hidden', !showLogs);
 
+    // Set Dynamic Ambient Background Watermark
+    const bladeWatermark = document.getElementById('bladeWatermarkBg');
+    if (bladeWatermark) {
+      const activeView = window.HubApp?.currentView || '';
+      const iconMap = {
+        dashboard: 'assets/icons/dashboard.png',
+        repositories: 'assets/icons/repositories.png',
+        policies: 'assets/icons/policies.png',
+        prs: 'assets/icons/prs.png',
+        pipelines: 'assets/icons/pipelines.png',
+        agentpools: 'assets/icons/agentpools.png',
+        serviceconnections: 'assets/icons/serviceconnections.png',
+        access: 'assets/icons/access.png',
+        activity: 'assets/icons/activity.png',
+        workitems: 'assets/icons/workitems.png'
+      };
+      const cat = `${config.breadcrumbResource || ''} ${activeView || ''}`.toLowerCase();
+      let iconUrl = iconMap[activeView] || '';
+      if (!iconUrl) {
+        if (cat.includes('repo') || cat.includes('branch')) iconUrl = iconMap.repositories;
+        else if (cat.includes('polic')) iconUrl = iconMap.policies;
+        else if (cat.includes('pr') || cat.includes('pull')) iconUrl = iconMap.prs;
+        else if (cat.includes('pipe') || cat.includes('build') || cat.includes('run')) iconUrl = iconMap.pipelines;
+        else if (cat.includes('access') || cat.includes('security') || cat.includes('permission') || cat.includes('group')) iconUrl = iconMap.access;
+        else if (cat.includes('activity') || cat.includes('commit')) iconUrl = iconMap.activity;
+        else if (cat.includes('agent') || cat.includes('pool') || cat.includes('queue')) iconUrl = iconMap.agentpools;
+        else if (cat.includes('service') || cat.includes('connection')) iconUrl = iconMap.serviceconnections;
+        else if (cat.includes('work') || cat.includes('item') || cat.includes('backlog')) iconUrl = iconMap.workitems;
+        else if (cat.includes('dash')) iconUrl = iconMap.dashboard;
+      }
+      if (iconUrl) {
+        bladeWatermark.style.backgroundImage = `url('${iconUrl}')`;
+        bladeWatermark.style.display = 'block';
+      } else {
+        bladeWatermark.style.display = 'none';
+      }
+    }
+
     this.switchTab('overview');
 
     backdrop?.classList.add('active');
@@ -145,6 +183,8 @@ window.HubApp = {
   chart: null,
   cachedRepos: [],
   cachedProjects: [],
+  currentUser: null,
+  isOrgAdmin: false,
   chartType: 'bar',
   currentTheme: 'light',
   currentView: 'dashboard',
@@ -274,6 +314,11 @@ window.HubApp = {
     // Re-render chart if active
     if (this.currentData.labels.length) {
       this.renderChart(this.currentData.labels, this.currentData.values, this.currentData.label);
+    }
+
+    // Re-render dashboard pipeline monthly chart if active
+    if (window.DashboardModule && window.DashboardModule.pipelineMonthlyChart && window.DashboardModule.updatePipelineMonthlyView) {
+      window.DashboardModule.updatePipelineMonthlyView();
     }
   },
 
@@ -410,6 +455,12 @@ window.HubApp = {
     document.getElementById('screen-step2')?.classList.toggle('hidden', stepNumber !== 2);
     document.getElementById('screen-step3')?.classList.toggle('hidden', stepNumber !== 3);
     
+    if (stepNumber !== 3) {
+      this.isOrgAdmin = false;
+      this.currentUser = null;
+      this.cachedProjects = [];
+    }
+
     const isStep3 = stepNumber === 3;
     document.getElementById('portalSidebar')?.classList.toggle('hidden', !isStep3);
     document.getElementById('btnToggleSidebar')?.classList.toggle('hidden', !isStep3);
@@ -480,6 +531,343 @@ window.HubApp = {
     if (k4v) k4v.textContent = v4;
   },
 
+  async getAuthenticatedUser(org, auth) {
+    try {
+      const data = await this.fetchAdo(org, '_apis/connectionData?api-version=7.1-preview.1', auth);
+      const user = data.authenticatedUser || data.authorizedUser || {};
+      const userId = user.id || '';
+      let descriptor = user.descriptor || user.subjectDescriptor || '';
+
+      // If descriptor is an identity descriptor (like Microsoft.IdentityModel.Claims...), attempt to resolve Graph descriptor
+      let graphDescriptor = '';
+      if (descriptor.startsWith('aad.') || descriptor.startsWith('msa.')) {
+        graphDescriptor = descriptor;
+      } else if (userId) {
+        try {
+          const descRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/descriptors/${encodeURIComponent(userId)}?api-version=7.1-preview.1`, {
+            headers: { 'Authorization': auth, 'Accept': 'application/json' }
+          });
+          if (descRes.ok) {
+            const descData = await descRes.json();
+            graphDescriptor = descData.value || '';
+          }
+        } catch (_) {}
+      }
+
+      return {
+        id: userId,
+        displayName: user.providerDisplayName || user.customDisplayName || '',
+        email: (user.mailAddress || user.uniqueName || '').toLowerCase(),
+        descriptor: descriptor,
+        graphDescriptor: graphDescriptor,
+        isOrgAdmin: false
+      };
+    } catch (e) {
+      console.warn('Could not query _apis/connectionData:', e);
+      return null;
+    }
+  },
+
+  isUserAuthorizedForProject(projectName) {
+    if (!projectName) return false;
+    // Organization administrators have complete access to all projects in the organization
+    if (this.isOrgAdmin) return true;
+    const clean = projectName.trim().toLowerCase();
+    return (this.cachedProjects || []).some(p => p.name.trim().toLowerCase() === clean);
+  },
+
+  async isOrganizationAdministrator(org, auth, user) {
+    if (!user) return false;
+
+    // Strategy 1: Check via Identities API with queryMembership=Expanded (Direct & handles nested AAD/security groups)
+    try {
+      const endpoints = [
+        `https://vssps.dev.azure.com/${org}/_apis/identities?searchFilter=General&filterValue=Project%20Collection%20Administrators&queryMembership=Expanded&api-version=7.1-preview.1`,
+        `https://dev.azure.com/${org}/_apis/identities?searchFilter=General&filterValue=Project%20Collection%20Administrators&queryMembership=Expanded&api-version=7.1-preview.1`
+      ];
+
+      for (const idUrl of endpoints) {
+        try {
+          const idRes = await fetch(idUrl, {
+            headers: { 'Authorization': auth, 'Accept': 'application/json' }
+          });
+          if (idRes.ok) {
+            const idData = await idRes.json();
+            const pcaIdentities = (idData.value || []).filter(item => {
+              const dName = (item.providerDisplayName || item.customDisplayName || item.displayName || '').toLowerCase();
+              const aName = (item.properties?.AccountName?.$value || '').toLowerCase();
+              return dName.includes('project collection administrators') || aName.includes('project collection administrators');
+            });
+
+            for (const pca of pcaIdentities) {
+              const members = pca.members || pca.memberIds || [];
+              if (user.id && members.some(m => String(m).toLowerCase() === String(user.id).toLowerCase())) {
+                console.info(`[Auth] User ${user.displayName || user.id} verified as Organization Administrator via Identities API.`);
+                return true;
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      console.warn('[Auth] Identities check notice:', e);
+    }
+
+    // Strategy 2: Check via Graph API (Project Collection Administrators Group Memberships)
+    try {
+      const groupsUrl = `https://vssps.dev.azure.com/${org}/_apis/graph/groups?api-version=7.1-preview.1`;
+      const gRes = await fetch(groupsUrl, {
+        headers: { 'Authorization': auth, 'Accept': 'application/json' }
+      });
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        const pcaGroup = (gData.value || []).find(g => {
+          const dName = (g.displayName || '').trim().toLowerCase();
+          const pName = (g.principalName || '').trim().toLowerCase();
+          return dName === 'project collection administrators' ||
+                 dName === 'organization administrators' ||
+                 pName.endsWith('\\project collection administrators') ||
+                 pName.endsWith('\\organization administrators');
+        });
+
+        if (pcaGroup && pcaGroup.descriptor) {
+          // 2a. Check upward from user graph descriptor if available
+          let userGraphDescriptor = user.graphDescriptor || user.descriptor || '';
+          if (!userGraphDescriptor.startsWith('aad.') && !userGraphDescriptor.startsWith('msa.')) {
+            try {
+              const descRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/descriptors/${encodeURIComponent(user.id)}?api-version=7.1-preview.1`, {
+                headers: { 'Authorization': auth, 'Accept': 'application/json' }
+              });
+              if (descRes.ok) {
+                const descData = await descRes.json();
+                userGraphDescriptor = descData.value || '';
+              }
+            } catch (_) {}
+          }
+
+          if (userGraphDescriptor) {
+            try {
+              const upRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/memberships/${encodeURIComponent(userGraphDescriptor)}?direction=up&api-version=7.1-preview.1`, {
+                headers: { 'Authorization': auth, 'Accept': 'application/json' }
+              });
+              if (upRes.ok) {
+                const upData = await upRes.json();
+                const parentDescriptors = (upData.value || []).map(m => m.containerDescriptor);
+                if (parentDescriptors.includes(pcaGroup.descriptor)) {
+                  console.info(`[Auth] User ${user.displayName || user.id} verified as Organization Administrator via Graph upward membership.`);
+                  return true;
+                }
+              }
+            } catch (_) {}
+          }
+
+          // 2b. Check downward from PCA group descriptor
+          try {
+            const downRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/memberships/${encodeURIComponent(pcaGroup.descriptor)}?direction=down&api-version=7.1-preview.1`, {
+              headers: { 'Authorization': auth, 'Accept': 'application/json' }
+            });
+            if (downRes.ok) {
+              const downData = await downRes.json();
+              const memberDescriptors = new Set((downData.value || []).map(m => m.memberDescriptor));
+
+              if (userGraphDescriptor && memberDescriptors.has(userGraphDescriptor)) {
+                console.info(`[Auth] User ${user.displayName || user.id} verified as Organization Administrator via Graph downward descriptor match.`);
+                return true;
+              }
+
+              // Also check direct user identities inside PCA
+              for (const mDesc of Array.from(memberDescriptors).slice(0, 40)) {
+                try {
+                  const uRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/users/${encodeURIComponent(mDesc)}?api-version=7.1-preview.1`, {
+                    headers: { 'Authorization': auth, 'Accept': 'application/json' }
+                  });
+                  if (uRes.ok) {
+                    const uData = await uRes.json();
+                    const uMail = (uData.mailAddress || uData.principalName || '').toLowerCase();
+                    const uName = (uData.displayName || '').toLowerCase();
+                    if ((user.email && uMail === user.email) ||
+                        (user.displayName && uName === user.displayName.toLowerCase())) {
+                      console.info(`[Auth] User ${user.displayName} verified as Organization Administrator via Graph PCA member match.`);
+                      return true;
+                    }
+                  }
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (e) {
+      console.warn('[Auth] Graph API admin check notice:', e);
+    }
+
+    // Strategy 3: Check via User Entitlements API
+    if (user && user.id) {
+      try {
+        const entUrl = `https://vsaex.dev.azure.com/${org}/_apis/userentitlements/${encodeURIComponent(user.id)}?api-version=7.1-preview.4`;
+        const entRes = await fetch(entUrl, {
+          headers: { 'Authorization': auth, 'Accept': 'application/json' }
+        });
+        if (entRes.ok) {
+          const entData = await entRes.json();
+          const isPcaAssignment = (entData.groupAssignments || []).some(ga => {
+            const gName = (ga.group?.displayName || ga.group?.principalName || '').toLowerCase();
+            return gName.includes('project collection administrators') || gName.includes('organization administrators');
+          });
+          if (isPcaAssignment) {
+            console.info(`[Auth] User ${user.displayName || user.id} verified as Organization Administrator via User Entitlements.`);
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('[Auth] User Entitlements admin check notice:', e);
+      }
+    }
+
+    // Strategy 4: Check via Security Permissions (Collection root permission)
+    try {
+      const secUrl = `https://dev.azure.com/${org}/_apis/permissions/3e65f728-f8bc-4ecd-adc8-7f5816b6c227/1?tokens=$&alwaysAllowAdministrators=true&api-version=7.1-preview.1`;
+      const secRes = await fetch(secUrl, {
+        headers: { 'Authorization': auth, 'Accept': 'application/json' }
+      });
+      if (secRes.ok) {
+        const secData = await secRes.json();
+        if (secData.value === true || (Array.isArray(secData.value) && secData.value[0] === true)) {
+          console.info(`[Auth] User ${user.displayName || user.id} verified as Organization Administrator via Security HasPermissions.`);
+          return true;
+        }
+      }
+    } catch (_) {}
+
+    return false;
+  },
+
+  async resolveAuthorizedProjects(org, auth, allProjects, user) {
+    const authorizedNames = new Set();
+
+    // Strategy 1: Fast Graph API Check - Upward memberships across all projects
+    let userGraphDescriptor = user?.graphDescriptor || user?.descriptor || '';
+    if (user && user.id && (!userGraphDescriptor.startsWith('aad.') && !userGraphDescriptor.startsWith('msa.'))) {
+      try {
+        const descRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/descriptors/${encodeURIComponent(user.id)}?api-version=7.1-preview.1`, {
+          headers: { 'Authorization': auth, 'Accept': 'application/json' }
+        });
+        if (descRes.ok) {
+          const descData = await descRes.json();
+          userGraphDescriptor = descData.value || '';
+        }
+      } catch (_) {}
+    }
+
+    if (userGraphDescriptor) {
+      try {
+        const upRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/memberships/${encodeURIComponent(userGraphDescriptor)}?direction=up&api-version=7.1-preview.1`, {
+          headers: { 'Authorization': auth, 'Accept': 'application/json' }
+        });
+        if (upRes.ok) {
+          const upData = await upRes.json();
+          const containerDescriptors = (upData.value || []).map(m => m.containerDescriptor);
+          
+          if (containerDescriptors.length > 0) {
+            // Resolve project-scoped group names matching format [ProjectName]\GroupName
+            await Promise.all(containerDescriptors.slice(0, 30).map(async (cDesc) => {
+              try {
+                const gRes = await fetch(`https://vssps.dev.azure.com/${org}/_apis/graph/groups/${encodeURIComponent(cDesc)}?api-version=7.1-preview.1`, {
+                  headers: { 'Authorization': auth, 'Accept': 'application/json' }
+                });
+                if (gRes.ok) {
+                  const gInfo = await gRes.json();
+                  const pName = gInfo.principalName || '';
+                  const match = pName.match(/^\[(.*?)\]\\/);
+                  if (match && match[1]) {
+                    authorizedNames.add(match[1].trim().toLowerCase());
+                  }
+                }
+              } catch (_) {}
+            }));
+          }
+        }
+      } catch (err) {
+        console.warn('[Auth] Graph membership upward scan notice:', err);
+      }
+    }
+
+    // Strategy 2: Organization-level user teams query ($mine=true)
+    try {
+      const teamsData = await this.fetchAdo(org, '_apis/teams?$mine=true&$top=500&api-version=7.1-preview.3', auth);
+      const teams = teamsData.value || [];
+      teams.forEach(t => {
+        if (t.projectName) authorizedNames.add(t.projectName.trim().toLowerCase());
+        if (t.projectId) {
+          const match = allProjects.find(p => p.id === t.projectId || p.name === t.projectId);
+          if (match) authorizedNames.add(match.name.trim().toLowerCase());
+        }
+      });
+    } catch (err) {
+      console.warn('[Auth] Organization-level $mine teams query notice:', err);
+    }
+
+    // Strategy 3: User Entitlements API (projectEntitlements)
+    if (user && user.id) {
+      try {
+        const entUrl = `https://vsaex.dev.azure.com/${org}/_apis/userentitlements/${encodeURIComponent(user.id)}?api-version=7.1-preview.4`;
+        const entRes = await fetch(entUrl, {
+          headers: { 'Authorization': auth, 'Accept': 'application/json' }
+        });
+        if (entRes.ok) {
+          const entData = await entRes.json();
+          (entData.projectEntitlements || []).forEach(pe => {
+            if (pe.projectRef?.name) authorizedNames.add(pe.projectRef.name.trim().toLowerCase());
+          });
+        }
+      } catch (entErr) {
+        console.warn('[Auth] User entitlements query notice:', entErr);
+      }
+    }
+
+    // Strategy 4: Project-scoped teams query ($mine=true) and explicit team member matching
+    const uncheckedProjects = allProjects.filter(p => !authorizedNames.has(p.name.trim().toLowerCase()));
+    if (uncheckedProjects.length > 0) {
+      await Promise.all(uncheckedProjects.map(async (p) => {
+        try {
+          // Check if current user has any team in this project
+          const projTeams = await this.fetchAdo(org, `_apis/projects/${encodeURIComponent(p.name)}/teams?$mine=true&api-version=6.0`, auth);
+          if (projTeams && projTeams.value && projTeams.value.length > 0) {
+            authorizedNames.add(p.name.trim().toLowerCase());
+            return;
+          }
+
+          // Check if current user's email/name/id is an explicit member in project teams
+          if (user && (user.email || user.displayName || user.id)) {
+            const allTeams = await this.fetchAdo(org, `_apis/projects/${encodeURIComponent(p.name)}/teams?$mine=false&$top=10&api-version=6.0`, auth);
+            for (const team of (allTeams.value || [])) {
+              try {
+                const memData = await this.fetchAdo(org, `_apis/projects/${encodeURIComponent(p.name)}/teams/${encodeURIComponent(team.id || team.name)}/members?api-version=6.0`, auth);
+                const isMember = (memData.value || []).some(m => {
+                  const id = m.identity || m;
+                  const mEmail = (id.uniqueName || id.mailAddress || '').toLowerCase();
+                  const mName = (id.displayName || id.name || '').toLowerCase();
+                  return (user.email && mEmail === user.email) ||
+                         (user.displayName && mName === user.displayName.toLowerCase()) ||
+                         (user.id && (id.id === user.id || m.id === user.id));
+                });
+                if (isMember) {
+                  authorizedNames.add(p.name.trim().toLowerCase());
+                  break;
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (projErr) {
+          console.warn(`[Auth] Project "${p.name}" membership check notice:`, projErr.message);
+        }
+      }));
+    }
+
+    // Filter allProjects strictly to ONLY those projects where the user is an authorized member
+    return allProjects.filter(p => authorizedNames.has(p.name.trim().toLowerCase()));
+  },
+
   async connectAndGoToStep3() {
     const org = this.getOrg();
     const pat = this.getPat();
@@ -499,15 +887,44 @@ window.HubApp = {
 
     try {
       const auth = 'Basic ' + btoa(':' + pat);
-      const data = await this.fetchAdo(org, '_apis/projects?api-version=7.1-preview.1&$top=500', auth);
-      this.cachedProjects = (data.value || []).sort((a, b) => a.name.localeCompare(b.name));
-      const projects = this.cachedProjects;
+      
+      // 1. Resolve Authenticated Identity
+      this.currentUser = await this.getAuthenticatedUser(org, auth);
+      const userName = this.currentUser?.displayName || 'User';
 
+      // 2. Discover All Projects in Organization
+      const data = await this.fetchAdo(org, '_apis/projects?api-version=7.1-preview.1&$top=500', auth);
+      const allProjects = (data.value || []).sort((a, b) => a.name.localeCompare(b.name));
+
+      // 3. Verify Organization Administrator privileges
+      this.setStatus(`Verifying administrative privileges for ${userName}...`, 'info');
+      const isOrgAdmin = await this.isOrganizationAdministrator(org, auth, this.currentUser);
+      this.isOrgAdmin = isOrgAdmin;
+      if (this.currentUser) this.currentUser.isOrgAdmin = isOrgAdmin;
+
+      let projects = [];
+      if (isOrgAdmin) {
+        console.info(`[Auth] User "${userName}" is an Organization Administrator (Project Collection Administrator). Full access to all ${allProjects.length} organization projects granted.`);
+        this.cachedProjects = allProjects;
+        projects = allProjects;
+      } else {
+        console.info(`[Auth] User "${userName}" is a standard user. Resolving provided/assigned projects only...`);
+        this.setStatus(`Resolving provided projects for ${userName}...`, 'info');
+        this.cachedProjects = await this.resolveAuthorizedProjects(org, auth, allProjects, this.currentUser);
+        projects = this.cachedProjects;
+      }
+
+      // 4. Populate Project Select with authorized projects
       const select = document.getElementById('projectSelect');
       if (select) {
-        select.innerHTML = '<option value="">-- Choose Project --</option>' +
-          projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
-        select.disabled = false;
+        if (projects.length > 0) {
+          select.innerHTML = '<option value="">-- Choose Project --</option>' +
+            projects.map(p => `<option value="${p.name}">${p.name}</option>`).join('');
+          select.disabled = false;
+        } else {
+          select.innerHTML = '<option value="">-- No Authorized Projects --</option>';
+          select.disabled = true;
+        }
       }
 
       this.populateDashboardProjectMenu();
@@ -519,12 +936,31 @@ window.HubApp = {
       if (orgCode) orgCode.textContent = `dev.azure.com/${org}`;
       
       const connText = document.getElementById('suiteConnectionText');
-      if (connText) connText.textContent = `Connected (${projects.length} Projects)`;
+      if (connText) {
+        if (isOrgAdmin) {
+          connText.innerHTML = `<span class="portal-role-tag org-admin-tag" title="Organization Administrator: Full access to all projects">👑 Org Admin</span> ${userName} (${projects.length} Projects)`;
+        } else {
+          connText.innerHTML = `<span class="portal-role-tag user-tag" title="Project Member: Access restricted to assigned projects">👤 Member</span> ${userName} (${projects.length} Assigned Project${projects.length === 1 ? '' : 's'})`;
+        }
+      }
 
       this.goToScreen(3);
       this.switchView('dashboard');
       if (window.DashboardModule) window.DashboardModule.reset();
-      this.setStatus(`Connected to ${org} successfully (${projects.length} projects discovered). Select a project to load dashboard metrics.`, 'success');
+
+      if (isOrgAdmin) {
+        this.setStatus(`Authenticated as ${userName} (Organization Administrator). All ${projects.length} organization project${projects.length === 1 ? '' : 's'} are accessible.`, 'success');
+      } else if (projects.length === 0) {
+        this.setStatus(`Access Notice: No assigned project memberships found for ${userName}. Please contact your organization administrator to be added as a project member.`, 'warning');
+      } else {
+        this.setStatus(`Authenticated as ${userName}. Found ${projects.length} assigned project${projects.length === 1 ? '' : 's'}. Only projects provided to your account are accessible.`, 'success');
+        
+        // If regular user belongs to only 1 project, auto-select it immediately for seamless UX
+        if (projects.length === 1 && select) {
+          select.value = projects[0].name;
+          await this.handleProjectSelect();
+        }
+      }
     } catch (e) {
       this.showModal(`Azure DevOps Authentication Error: ${e.message}`);
     } finally {
@@ -537,6 +973,15 @@ window.HubApp = {
 
   async handleProjectSelect() {
     const project = document.getElementById('projectSelect')?.value || '';
+    
+    // Security check: Verify project authorization before proceeding
+    if (project && !this.isUserAuthorizedForProject(project)) {
+      this.showModal(`Access Denied: You are not an authorized member of project "${project}". You only have permission to view projects you are assigned to.`);
+      const select = document.getElementById('projectSelect');
+      if (select) select.value = this.cachedProjects[0]?.name || '';
+      return;
+    }
+
     const activeLabel = document.getElementById('activeProjectLabel');
     if (activeLabel) activeLabel.textContent = project || 'Select Project';
 
@@ -643,6 +1088,9 @@ window.HubApp = {
     const project = document.getElementById('projectSelect')?.value;
     if (!project) {
       return this.showModal('Please select an Azure DevOps Project first using the Project selector.');
+    }
+    if (!this.isUserAuthorizedForProject(project)) {
+      return this.showModal(`Access Denied: You are not an authorized member of project "${project}". You only have permission to view projects you are assigned to.`);
     }
 
     switch (this.currentView) {
@@ -786,6 +1234,11 @@ window.HubApp = {
     if (!project) {
       if (window.DashboardModule) window.DashboardModule.reset();
       this.setStatus('Please select an Azure DevOps Project from the dropdown above to load the Dashboard.', 'warning');
+      return;
+    }
+    if (!this.isUserAuthorizedForProject(project)) {
+      if (window.DashboardModule) window.DashboardModule.reset();
+      this.setStatus(`Access Denied: You are not an authorized member of project "${project}".`, 'error');
       return;
     }
     try {
@@ -982,12 +1435,16 @@ window.HubApp = {
     const projects = this.cachedProjects || [];
 
     if (projects.length === 0) {
-      listEl.innerHTML = `<div class="az-dash-project-empty">No projects discovered. Connect workspace first.</div>`;
+      listEl.innerHTML = `<div class="az-dash-project-empty">No authorized projects found for your account.</div>`;
       return;
     }
 
     const self = this;
-    const html = projects.map(p => {
+    const scopeHeader = this.isOrgAdmin
+      ? `<div class="az-dash-project-scope-header admin-scope">👑 Organization Admin (${projects.length} Projects)</div>`
+      : `<div class="az-dash-project-scope-header user-scope">👤 Assigned Projects (${projects.length})</div>`;
+
+    const html = scopeHeader + projects.map(p => {
       const isSelected = p.name === currentProject;
       return `
         <div class="az-dash-project-item ${isSelected ? 'selected' : ''}" data-project="${self.escapeHtml(p.name)}">

@@ -6,8 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Microsoft Azure DevOps - Intelligence Hub & Executive Insights</title>
   <link rel="stylesheet" href="css/styles.css?v=16.0">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Replace line 9 with: -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 
@@ -30,12 +28,8 @@
       <!-- Brand Mark & Logo -->
       <a href="javascript:void(0)" class="portal-brand" id="btnLogoHome">
         <div class="brand-icon-box">
-          <!-- Microsoft Azure DevOps Brand Mark -->
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-            <polyline points="2 17 12 22 22 17"></polyline>
-            <polyline points="2 12 12 17 22 12"></polyline>
-          </svg>
+          <img src="assets/icons/hub_title.png" alt="Azure DevOps Intelligence Hub" class="brand-logo-img hub-title-img-light" />
+          <img src="assets/icons/hub_title_dark.png" alt="Azure DevOps Intelligence Hub" class="brand-logo-img hub-title-img-dark" />
         </div>
         <span class="portal-title">Azure DevOps <span class="sub-brand">Intelligence Hub</span></span>
       </a>
@@ -258,19 +252,13 @@
 
       <!-- STEP 1: WELCOME SCREEN -->
       <div id="screen-step1" class="wizard-screen">
+        <div class="welcome-fullpage-watermark" aria-hidden="true"></div>
         <div class="welcome-card">
           <div class="header-brand-hero">
-            <div class="header-logo-hero">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-                <polyline points="2 17 12 22 22 17"></polyline>
-                <polyline points="2 12 12 17 22 12"></polyline>
-              </svg>
-            </div>
-            <div>
-              <h1>Azure DevOps Intelligence Hub</h1>
-              <p>Unified Enterprise Repository Matrix, Branch Policy Compliance, CI/CD Telemetry & Security Analysis</p>
-            </div>
+            <h1 class="sr-only">Azure DevOps Intelligence Hub</h1>
+            <img src="assets/icons/hub_title.png" alt="Azure DevOps Intelligence Hub" class="hub-hero-title-img hub-title-img-light" />
+            <img src="assets/icons/hub_title_dark.png" alt="Azure DevOps Intelligence Hub" class="hub-hero-title-img hub-title-img-dark" />
+            <p>Unified Enterprise Repository Matrix, Branch Policy Compliance, CI/CD Telemetry & Security Analysis</p>
           </div>
 
           <div class="welcome-features">
@@ -314,18 +302,21 @@
             </div>
           </div>
 
-          <button type="button" id="btnStartWizard" class="btn-hero-start">
-            Get Started
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-              <polyline points="12 5 19 12 12 19"></polyline>
-            </svg>
-          </button>
+          <div class="welcome-card-actions">
+            <button type="button" id="btnStartWizard" class="btn-hero-start">
+              Get Started
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+                <polyline points="12 5 19 12 12 19"></polyline>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
       <!-- STEP 2: CREDENTIALS AUTHENTICATION SCREEN -->
       <div id="screen-step2" class="wizard-screen hidden">
+        <div class="welcome-fullpage-watermark" aria-hidden="true"></div>
         <div class="auth-card">
           <div class="auth-header">
             <div class="auth-title">
@@ -645,11 +636,12 @@
 
             <!-- OVERVIEW: Azure DevOps Style Widget Dashboard -->
             <div id="view-dashboard" class="data-view">
+              <div class="view-watermark-bg view-watermark-dashboard" aria-hidden="true"></div>
               <div class="az-dashboard-wrapper">
                 
                 <!-- 1. Top Dashboard Header Toolbar -->
                 <div class="az-dashboard-header-bar">
-                  <div class="az-dash-title-group" style="position:relative;">
+                  <div class="az-dash-title-group" style="position:relative; z-index:105;">
                     <div class="az-dash-team-picker" id="azDashTeamPicker" role="button" tabindex="0" title="Click to select Azure DevOps Project">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="3" width="7" height="7"></rect>
@@ -676,20 +668,40 @@
                   </div>
 
                   <div class="az-dash-actions">
-                    <button type="button" class="az-btn-action" id="btnEditDashboard">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                      <span>Edit</span>
-                    </button>
+                    <!-- Time Range Selector -->
+                    <select id="dashTimeRangeSelect" class="az-dash-select-sm" title="Select Overview Time Range">
+                      <option value="24h">Last 24 Hours</option>
+                      <option value="7d" selected>Last 7 Days</option>
+                      <option value="30d">Last 30 Days</option>
+                    </select>
+
+                    <!-- Last Updated Indicator -->
+                    <span class="az-last-updated-text" id="dashLastUpdatedText" title="Time of last data refresh">Last updated: —</span>
+
                     <button type="button" class="az-btn-action" id="btnRefreshDashboard">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
                       <span>Refresh</span>
                     </button>
-                    <button type="button" class="az-btn-icon-only" title="Dashboard Settings" id="btnDashSettings">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                    </button>
                     <button type="button" class="az-btn-icon-only" title="Full Screen" id="btnDashFullscreen">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
                     </button>
+                  </div>
+                </div>
+
+                <!-- Critical Alerts Banner (Conditional) -->
+                <div class="az-critical-alerts-banner hidden" id="azDashCriticalAlertsBanner">
+                  <div class="az-alert-banner-header">
+                    <span class="az-alert-banner-icon">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                    </span>
+                    <strong style="font-size:12.5px;">Critical Attention Required:</strong>
+                  </div>
+                  <div class="az-alert-badges-list" id="azDashCriticalAlertsList">
+                    <!-- Populated dynamically: P1/Severity 1 bugs, offline agents, failed main deployments -->
                   </div>
                 </div>
 
@@ -708,211 +720,294 @@
                   </div>
                 </div>
 
-                <!-- 2. The 12-Column Azure DevOps Widget Grid -->
-                <div class="az-widget-grid">
+                <!-- Loading State Overlay -->
+                <div class="az-dash-loading-overlay hidden" id="azDashLoadingOverlay">
+                  <div class="az-dash-spinner"></div>
+                  <div style="font-size:12px; font-weight:600; color:var(--text-main); margin-top:8px;">Aggregating project telemetry &amp; live metrics...</div>
+                </div>
+
+                <!-- 2. Overview KPI Summary Cards (4 Cards Grid) -->
+                <div class="az-kpi-summary-grid">
                   
-                  <!-- Widget 1: Sprint Burndown Chart (Col 5) -->
-                  <div class="az-widget-card az-widget-col-5">
-                    <div>
-                      <div class="az-widget-header">
-                        <div>
-                          <div class="az-widget-title" id="azBurndownSprintTitle">Sprint Burndown</div>
-                        </div>
+                  <!-- Card 1: Work Items Summary -->
+                  <div class="az-kpi-overview-card kpi-border-blue az-kpi-clickable" id="kpiCardWorkItems" role="button" tabindex="0" title="Click to view all Work Items &amp; Backlog">
+                    <div class="az-kpi-header">
+                      <div class="az-kpi-title-wrap">
+                        <span class="az-kpi-icon icon-blue">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="9" y1="9" x2="15" y2="9"></line>
+                            <line x1="9" y1="13" x2="15" y2="13"></line>
+                            <line x1="9" y1="17" x2="11" y2="17"></line>
+                          </svg>
+                        </span>
+                        <span class="az-kpi-title">Work Items</span>
                       </div>
-
-                      <div class="az-burndown-stats">
-                        <div class="az-bd-stat-item">
-                          <span class="az-bd-stat-label">Completed</span>
-                          <span class="az-bd-stat-val" id="azBdCompletedPct">—</span>
-                        </div>
-                        <div class="az-bd-stat-item">
-                          <span class="az-bd-stat-label">Average burndown</span>
-                          <span class="az-bd-stat-val" id="azBdAvgBurndown">—</span>
-                        </div>
-                        <div class="az-bd-stat-item">
-                          <span class="az-bd-stat-label">Remaining Work</span>
-                          <span class="az-bd-stat-val highlight" id="azBdRemainingWork">—</span>
-                        </div>
-                        <div class="az-bd-stat-item">
-                          <span class="az-bd-stat-label">Items not estimated</span>
-                          <span class="az-bd-stat-val" id="azBdNotEstimated">—</span>
-                        </div>
-                      </div>
+                      <span class="az-kpi-badge badge-active" id="dashKpiTotalScopeBadge">0 items</span>
                     </div>
-
-                    <div class="az-chart-box" style="height:150px;">
-                      <canvas id="azBurndownCanvas"></canvas>
+                    <div class="az-kpi-body">
+                      <div class="az-kpi-main-val" id="dashKpiActiveWorkItems">—</div>
+                      <div class="az-kpi-subtext">Active items in development</div>
                     </div>
-
-                    <div class="az-legend-row">
-                      <div class="az-legend-item">
-                        <span class="az-legend-sq" style="background:#0078d4;"></span>
-                        <span>Remaining</span>
+                    <div class="az-kpi-footer">
+                      <div class="az-kpi-pill-group">
+                        <span class="az-kpi-chip chip-red" title="High Priority / Active Bugs"><span id="dashKpiBugsCount">0</span> High-Pri Bugs</span>
+                        <span class="az-kpi-chip chip-green" title="Closed / Completed"><span id="dashKpiClosedCount">0</span> Resolved</span>
                       </div>
-                      <div class="az-legend-item">
-                        <span class="az-legend-line" style="background:#64748b;"></span>
-                        <span>Burndown</span>
-                      </div>
-                      <div class="az-legend-item">
-                        <span class="az-legend-line" style="background:#ea580c;"></span>
-                        <span>Total Scope</span>
+                      <div class="az-kpi-progress-bar">
+                        <div class="az-kpi-progress-fill fill-blue" id="dashKpiWorkItemsProgress" style="width:0%;"></div>
                       </div>
                     </div>
                   </div>
 
-                  <!-- Widget 2: Colored Query Tiles (Col 4 - 3x2 Grid) -->
-                  <div class="az-widget-col-4">
-                    <div class="az-tile-grid-container">
-                      
-                      <!-- Yellow: Active Tasks -->
-                      <div class="az-query-tile tile-yellow" id="tileActiveTasks">
-                        <span class="tile-title">Active Tasks</span>
-                        <span class="tile-count" id="countActiveTasks">0</span>
-                        <span class="tile-subtext">Work items</span>
+                  <!-- Card 2: Pipeline Success/Failure Summary -->
+                  <div class="az-kpi-overview-card kpi-border-green az-kpi-clickable" id="kpiCardPipelines" role="button" tabindex="0" title="Click to view all Pipeline Runs">
+                    <div class="az-kpi-header">
+                      <div class="az-kpi-title-wrap">
+                        <span class="az-kpi-icon icon-green">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                          </svg>
+                        </span>
+                        <span class="az-kpi-title">Pipelines Health</span>
                       </div>
-
-                      <!-- Cyan: Ready for Testing -->
-                      <div class="az-query-tile tile-cyan" id="tileReadyTesting">
-                        <span class="tile-title">Ready for Testing</span>
-                        <span class="tile-count" id="countReadyTesting">0</span>
-                        <span class="tile-subtext">Work items</span>
-                      </div>
-
-                      <!-- Green: Completed User Stories -->
-                      <div class="az-query-tile tile-green" id="tileCompletedStories">
-                        <span class="tile-title">Completed User...</span>
-                        <span class="tile-count" id="countCompletedStories">0</span>
-                        <span class="tile-subtext">Work items</span>
-                      </div>
-
-                      <!-- Blue: Open User Stories -->
-                      <div class="az-query-tile tile-blue" id="tileOpenStories">
-                        <span class="tile-title">Open User Stories</span>
-                        <span class="tile-count" id="countOpenStories">0</span>
-                        <span class="tile-subtext">Work items</span>
-                      </div>
-
-                      <!-- Red: Active Bugs -->
-                      <div class="az-query-tile tile-red" id="tileActiveBugs">
-                        <span class="tile-title">Active Bugs</span>
-                        <span class="tile-count" id="countActiveBugs">0</span>
-                        <span class="tile-subtext">Work items</span>
-                      </div>
-
-                      <!-- White / Border: Sprint Capacity / PRs -->
-                      <div class="az-query-tile tile-capacity" id="tileSprintCapacity">
-                        <span class="tile-title" style="color:var(--text-main);">Sprint Capacity</span>
-                        <span class="tile-subtext" style="color:var(--azure-blue); font-weight:600; margin-top:auto;">Set capacity &gt;</span>
-                      </div>
-
+                      <span class="az-kpi-badge badge-rate" id="dashKpiPipelineRateBadge">0% Pass</span>
                     </div>
-                  </div>
-
-                  <!-- Widget 3: Stories CFD (Col 3) -->
-                  <div class="az-widget-card az-widget-col-3">
-                    <div class="az-widget-header">
-                      <div>
-                        <div class="az-widget-title">Stories CFD</div>
-                        <div class="az-widget-subtitle">Last 14 days</div>
+                    <div class="az-kpi-body">
+                      <div class="az-kpi-main-val" id="dashKpiPipelinePassRate">—</div>
+                      <div class="az-kpi-subtext"><span id="dashKpiPipelineTotalRuns">0</span> total runs executed</div>
+                    </div>
+                    <div class="az-kpi-footer">
+                      <div class="az-kpi-pill-group">
+                        <span class="az-kpi-chip chip-green"><span id="dashKpiPipelinePassed">0</span> Passed</span>
+                        <span class="az-kpi-chip chip-red"><span id="dashKpiPipelineFailed">0</span> Failed</span>
+                        <span class="az-kpi-chip chip-blue"><span id="dashKpiPipelineRunning">0</span> Active</span>
                       </div>
-                    </div>
-                    <div class="az-chart-box" style="height:190px;">
-                      <canvas id="azCfdCanvas"></canvas>
-                    </div>
-                  </div>
-
-                  <!-- Widget 4: Stories by State (Col 4) -->
-                  <div class="az-widget-card az-widget-col-4">
-                    <div class="az-widget-header">
-                      <div class="az-widget-title">Stories by State</div>
-                    </div>
-                    <div class="az-chart-box" style="height:210px;">
-                      <canvas id="azStoriesByStateCanvas"></canvas>
-                    </div>
-                  </div>
-
-                  <!-- Widget 5: Production Deployments Matrix (Col 5) -->
-                  <div class="az-widget-card az-widget-col-5">
-                    <div>
-                      <div class="az-widget-header">
-                        <div class="az-widget-title" id="azDeployMatrixTitle">Production Deployments</div>
-                      </div>
-
-                      <!-- Stage Ring Header Boxes -->
-                      <div class="az-deploy-header-stages" id="azDeployHeaderStages">
-                        <!-- Populated dynamically when project is selected -->
-                      </div>
-                    </div>
-
-                    <!-- Release Rows Matrix -->
-                    <div class="az-matrix-table" id="azDeployMatrixBody">
-                      <div class="az-empty-dash-state">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                        </svg>
-                        <div style="font-weight:600; margin-top:6px;">No Project Selected</div>
-                        <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Select a project from the top dropdown to view release and pipeline deployments.</div>
+                      <div class="az-kpi-progress-bar">
+                        <div class="az-kpi-progress-fill fill-green" id="dashKpiPipelineProgress" style="width:0%;"></div>
                       </div>
                     </div>
                   </div>
 
-                  <!-- Widget 6: Team Members Widget (Col 3) -->
-                  <div class="az-widget-card az-widget-col-3" id="widgetTeamMembers">
+                  <!-- Card 3: Repository & Pull Request Pulse -->
+                  <div class="az-kpi-overview-card kpi-border-purple az-kpi-clickable" id="kpiCardReposPrs" role="button" tabindex="0" title="Click to view Repositories &amp; Pull Requests">
+                    <div class="az-kpi-header">
+                      <div class="az-kpi-title-wrap">
+                        <span class="az-kpi-icon icon-purple">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="18" cy="18" r="3"></circle>
+                            <circle cx="6" cy="6" r="3"></circle>
+                            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+                            <line x1="6" y1="9" x2="6" y2="21"></line>
+                          </svg>
+                        </span>
+                        <span class="az-kpi-title">Repos &amp; Pull Requests</span>
+                      </div>
+                      <span class="az-kpi-badge badge-purple" id="dashKpiReposCountBadge">0 Repos</span>
+                    </div>
+                    <div class="az-kpi-body">
+                      <div class="az-kpi-main-val" id="dashKpiOpenPrsCount">—</div>
+                      <div class="az-kpi-subtext">Open PRs awaiting review</div>
+                    </div>
+                    <div class="az-kpi-footer">
+                      <div class="az-kpi-pill-group">
+                        <span class="az-kpi-chip chip-purple"><span id="dashKpiActiveReposCount">0</span> Repositories</span>
+                        <span class="az-kpi-chip chip-blue"><span id="dashKpiActiveBranchesCount">0</span> Active PRs</span>
+                      </div>
+                      <div class="az-kpi-progress-bar">
+                        <div class="az-kpi-progress-fill fill-purple" id="dashKpiPrProgress" style="width:0%;"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Card 4: Infrastructure Overview -->
+                  <div class="az-kpi-overview-card kpi-border-cyan az-kpi-clickable" id="kpiCardInfrastructure" role="button" tabindex="0" title="Click to view Agent Pools &amp; Infrastructure">
+                    <div class="az-kpi-header">
+                      <div class="az-kpi-title-wrap">
+                        <span class="az-kpi-icon icon-cyan">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                          </svg>
+                        </span>
+                        <span class="az-kpi-title">Infrastructure</span>
+                      </div>
+                      <span class="az-kpi-badge badge-cyan" id="dashKpiInfraStatusBadge">Operational</span>
+                    </div>
+                    <div class="az-kpi-body">
+                      <div class="az-kpi-main-val" id="dashKpiOnlinePoolsCount">—</div>
+                      <div class="az-kpi-subtext">Online agent pools / queues</div>
+                    </div>
+                    <div class="az-kpi-footer">
+                      <div class="az-kpi-pill-group">
+                        <span class="az-kpi-chip chip-cyan"><span id="dashKpiEndpointsCount">0</span> Service Connections</span>
+                        <span class="az-kpi-chip chip-green"><span class="pulse-dot-sm pulse-green"></span> Live</span>
+                      </div>
+                      <div class="az-kpi-progress-bar">
+                        <div class="az-kpi-progress-fill fill-cyan" style="width:100%;"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <!-- 3. Visual Charts Grid (Pipeline Health & Work Item Distribution) -->
+                <div class="az-widget-grid" style="margin-top:16px;">
+                  
+                  <!-- Visual 1: Pipeline Health Chart (Col 6) -->
+                  <div class="az-widget-card az-widget-col-6" id="widgetPipelineHealth">
                     <div class="az-widget-header">
                       <div>
                         <div class="az-widget-title">
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="9" cy="7" r="4"></circle>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:text-bottom;">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
                           </svg>
-                          <span>Team Members</span>
-                          <span class="az-team-badge" id="azTeamTotalBadge">0</span>
+                          <span>Pipeline Build &amp; Release Health</span>
                         </div>
-                        <div class="az-widget-subtitle" id="azTeamSubtitle">Project teams & contributors</div>
+                        <div class="az-widget-subtitle">Execution distribution: Pass, Fail, and In-Progress</div>
+                      </div>
+                      <div class="az-widget-header-tools">
+                        <span class="az-badge-health" id="dashPipelineHealthRatio">—</span>
                       </div>
                     </div>
 
-                    <div class="az-team-members-content">
-                      <!-- Filter / Search Controls -->
-                      <div class="az-team-controls hidden" id="azTeamControls">
-                        <input type="text" id="azTeamMemberSearch" class="az-team-search-input" placeholder="Search members..." />
-                        <select id="azTeamFilterSelect" class="az-team-filter-select hidden">
-                          <option value="all">All Teams</option>
-                        </select>
-                      </div>
+                    <div class="az-chart-box" style="height:220px; position:relative;">
+                      <canvas id="azDashPipelineHealthCanvas"></canvas>
+                    </div>
 
-                      <!-- Live populated list of all members -->
-                      <div class="az-team-members-scroll" id="azTeamMembersList">
-                        <div class="az-empty-dash-state">
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                            <circle cx="9" cy="7" r="4"></circle>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                          </svg>
-                          <div style="font-weight:600; margin-top:6px;">No Project Selected</div>
-                          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Select a project to view its team members.</div>
-                        </div>
+                    <div class="az-legend-row" style="margin-top:12px; justify-content:center; gap:20px;">
+                      <div class="az-legend-item">
+                        <span class="az-legend-sq" style="background:#107c10;"></span>
+                        <span>Passed (<strong id="azLegendPipePassed">0</strong>)</span>
                       </div>
-
-                      <!-- Footer link to security & access view -->
-                      <div class="az-team-footer" id="azTeamFooter">
-                        <button type="button" class="az-link-btn" id="btnViewProjectAccessLink">
-                          View All in Security & Access →
-                        </button>
+                      <div class="az-legend-item">
+                        <span class="az-legend-sq" style="background:#d13438;"></span>
+                        <span>Failed (<strong id="azLegendPipeFailed">0</strong>)</span>
+                      </div>
+                      <div class="az-legend-item">
+                        <span class="az-legend-sq" style="background:#0078d4;"></span>
+                        <span>In-Progress (<strong id="azLegendPipeRunning">0</strong>)</span>
                       </div>
                     </div>
                   </div>
 
-                </div> <!-- /az-widget-grid -->
+                  <!-- Visual 2: Work Item Status Distribution Chart (Col 6) -->
+                  <div class="az-widget-card az-widget-col-6" id="widgetWorkItemDist">
+                    <div class="az-widget-header">
+                      <div>
+                        <div class="az-widget-title">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:text-bottom;">
+                            <line x1="18" y1="20" x2="18" y2="10"></line>
+                            <line x1="12" y1="20" x2="12" y2="4"></line>
+                            <line x1="6" y1="20" x2="6" y2="14"></line>
+                          </svg>
+                          <span>Work Item Status Distribution</span>
+                        </div>
+                        <div class="az-widget-subtitle">Breakdown by state &amp; deliverable category</div>
+                      </div>
+                      <div class="az-widget-header-tools">
+                        <span class="az-badge-health" id="dashWorkItemTotalCountBadge">0 Total</span>
+                      </div>
+                    </div>
+
+                    <div class="az-chart-box" style="height:220px; position:relative;">
+                      <canvas id="azDashWorkItemDistCanvas"></canvas>
+                    </div>
+
+                    <div class="az-legend-row" style="margin-top:12px; justify-content:center; gap:16px;">
+                      <div class="az-legend-item">
+                        <span class="az-legend-sq" style="background:#0284c7;"></span>
+                        <span>New (<strong id="azLegendWiNew">0</strong>)</span>
+                      </div>
+                      <div class="az-legend-item">
+                        <span class="az-legend-sq" style="background:#0078d4;"></span>
+                        <span>Active (<strong id="azLegendWiActive">0</strong>)</span>
+                      </div>
+                      <div class="az-legend-item">
+                        <span class="az-legend-sq" style="background:#eab308;"></span>
+                        <span>In Testing (<strong id="azLegendWiTesting">0</strong>)</span>
+                      </div>
+                      <div class="az-legend-item">
+                        <span class="az-legend-sq" style="background:#107c10;"></span>
+                        <span>Closed (<strong id="azLegendWiClosed">0</strong>)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+
+                <!-- 4. Tables & Activity Grid (Open PRs & Recent Activity) -->
+                <div class="az-widget-grid" style="margin-top:16px;">
+                  
+                  <!-- Visual 3: Open PR Review Status Table (Col 8) -->
+                  <div class="az-widget-card az-widget-col-8" id="widgetOpenPrTable">
+                    <div class="az-widget-header">
+                      <div>
+                        <div class="az-widget-title">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:text-bottom;">
+                            <circle cx="18" cy="18" r="3"></circle>
+                            <circle cx="6" cy="6" r="3"></circle>
+                            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+                            <line x1="6" y1="9" x2="6" y2="21"></line>
+                          </svg>
+                          <span>Open Pull Requests Awaiting Review</span>
+                          <span class="az-team-badge" id="azDashPrCountBadge">0</span>
+                        </div>
+                        <div class="az-widget-subtitle">Active pull requests across project repositories</div>
+                      </div>
+                      <div class="az-widget-header-tools">
+                        <button type="button" class="az-btn-action" id="btnDashJumpToPrs" style="padding:4px 8px; font-size:11px;">
+                          View All PRs →
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="az-dash-table-wrapper" id="azDashOpenPrContainer" style="max-height:280px; overflow-y:auto;">
+                      <div class="az-empty-dash-state" style="padding:24px 0;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                          <circle cx="18" cy="18" r="3"></circle>
+                          <circle cx="6" cy="6" r="3"></circle>
+                          <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+                          <line x1="6" y1="9" x2="6" y2="21"></line>
+                        </svg>
+                        <div style="font-weight:600; margin-top:6px;">No Open Pull Requests</div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Select a project or all pull requests are merged and approved.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Visual 4: Recent Activity List (Col 4) -->
+                  <div class="az-widget-card az-widget-col-4" id="widgetRecentActivity">
+                    <div class="az-widget-header">
+                      <div>
+                        <div class="az-widget-title">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:5px; vertical-align:text-bottom;">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                          </svg>
+                          <span>Recent Activity Feed</span>
+                        </div>
+                        <div class="az-widget-subtitle">Live commits, builds &amp; updates</div>
+                      </div>
+                    </div>
+
+                    <div class="az-dash-activity-stream" id="azDashRecentActivityList" style="max-height:280px; overflow-y:auto; padding-right:4px;">
+                      <div class="az-empty-dash-state" style="padding:24px 0;">
+                        <div style="font-size:11px; color:var(--text-muted);">No recent project activity recorded.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
 
               </div> <!-- /az-dashboard-wrapper -->
             </div>
 
             <!-- VIEW 1: Repositories & Branches -->
             <section id="view-repositories" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-repositories" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -937,6 +1032,7 @@
 
             <!-- VIEW: Branch Policies Sub-view -->
             <section id="view-policies" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-policies" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -956,6 +1052,7 @@
 
             <!-- VIEW: Pull Requests Sub-view -->
             <section id="view-prs" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-prs" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -979,6 +1076,7 @@
 
             <!-- VIEW 2: Project Security Groups, Roles & Member Permissions -->
             <section id="view-access" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-access" aria-hidden="true"></div>
               <div class="table-action-topbar">
                 <button type="button" id="btnExportAccessXlsx" class="btn-export-green">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1011,6 +1109,7 @@
 
             <!-- VIEW 3: Activity & Commits -->
             <section id="view-activity" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-activity" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -1054,6 +1153,7 @@
 
             <!-- VIEW 4: Pipelines -->
             <section id="view-pipelines" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-pipelines" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -1086,6 +1186,7 @@
 
             <!-- VIEW 5: Work Items -->
             <section id="view-workitems" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-workitems" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -1109,6 +1210,7 @@
 
             <!-- VIEW 6: Agent Pools -->
             <section id="view-agentpools" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-agentpools" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -1132,6 +1234,7 @@
 
             <!-- VIEW 7: Service Connections -->
             <section id="view-serviceconnections" class="data-view hidden">
+              <div class="view-watermark-bg view-watermark-serviceconnections" aria-hidden="true"></div>
               <div class="portal-table-wrapper">
                 <table class="portal-table">
                   <thead>
@@ -1219,6 +1322,7 @@
   <div id="bladeBackdrop" class="blade-backdrop"></div>
 
   <aside id="azureBladePanel" class="azure-blade-panel" aria-label="Azure Resource Blade" aria-hidden="true">
+    <div class="blade-watermark-bg" id="bladeWatermarkBg" aria-hidden="true"></div>
     <!-- Blade Header -->
     <div class="blade-header">
       <div class="blade-header-top">

@@ -1,13 +1,16 @@
-// Azure DevOps Intelligence Hub - Live Azure DevOps Widget Dashboard Module
+// Azure DevOps Intelligence Hub - Comprehensive Project Overview Dashboard
 window.DashboardModule = {
-  burndownChart: null,
-  cfdChart: null,
-  storiesStateChart: null,
   currentProject: '',
   currentOrg: '',
-  allTeamMembers: [],
-  allTeams: [],
+  currentPat: '',
+  currentTimeRange: '7d', // '24h' | '7d' | '30d'
+  pipelineHealthChart: null,
+  workItemDistChart: null,
   eventsBound: false,
+  cachedProjects: [],
+  lastPipelineHealth: null,
+  lastWorkItemDist: null,
+  isLoading: false,
 
   escapeHtml(str) {
     return String(str || '')
@@ -17,27 +20,112 @@ window.DashboardModule = {
       .replace(/"/g, '&quot;');
   },
 
+  formatRelativeTime(dateInput) {
+    if (!dateInput) return '—';
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return '—';
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return `${days}d ago`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  },
+
+  getTimeRangeCutoff() {
+    const now = new Date();
+    if (this.currentTimeRange === '24h') {
+      return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    }
+    if (this.currentTimeRange === '30d') {
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+    // Default: 7 days
+    return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  },
+
+  getAuthHeader() {
+    const pat = (this.currentPat || '').trim();
+    if (!pat) return '';
+    return pat.startsWith('Basic ') ? pat : 'Basic ' + btoa(':' + pat);
+  },
+
+  setLoading(show) {
+    this.isLoading = show;
+    const overlay = document.getElementById('azDashLoadingOverlay');
+    if (overlay) {
+      if (show) overlay.classList.remove('hidden');
+      else overlay.classList.add('hidden');
+    }
+  },
+
+  updateLastUpdatedTimestamp() {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString(undefined, { hour12: false });
+    const textEl = document.getElementById('dashLastUpdatedText');
+    if (textEl) {
+      textEl.textContent = `Last updated: ${timeStr}`;
+    }
+  },
+
+  async fetchApi(urlPath, options = {}) {
+    const org = this.currentOrg;
+    const auth = this.getAuthHeader();
+    if (!org || !auth) return null;
+
+    try {
+      const fullUrl = urlPath.startsWith('http')
+        ? urlPath
+        : `https://dev.azure.com/${org}/${urlPath}`;
+
+      const fetchOptions = {
+        method: options.method || 'GET',
+        headers: {
+          'Authorization': auth,
+          'Accept': 'application/json',
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(options.headers || {})
+        },
+        ...(options.body ? { body: options.body } : {})
+      };
+
+      const res = await fetch(fullUrl, fetchOptions);
+
+      if (!res.ok) {
+        return null;
+      }
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('json')) {
+        return null;
+      }
+
+      return await res.json();
+    } catch (err) {
+      return null;
+    }
+  },
+
   reset() {
     this.currentProject = '';
-    this.allTeamMembers = [];
-    this.allTeams = [];
+    this.lastPipelineHealth = null;
+    this.lastWorkItemDist = null;
 
     // Destroy active charts
-    if (this.burndownChart) {
-      this.burndownChart.destroy();
-      this.burndownChart = null;
+    if (this.pipelineHealthChart) {
+      this.pipelineHealthChart.destroy();
+      this.pipelineHealthChart = null;
     }
-    if (this.cfdChart) {
-      this.cfdChart.destroy();
-      this.cfdChart = null;
-    }
-    if (this.storiesStateChart) {
-      this.storiesStateChart.destroy();
-      this.storiesStateChart = null;
+    if (this.workItemDistChart) {
+      this.workItemDistChart.destroy();
+      this.workItemDistChart = null;
     }
 
     // Clear chart canvases
-    ['azBurndownCanvas', 'azCfdCanvas', 'azStoriesByStateCanvas'].forEach(id => {
+    ['azDashPipelineHealthCanvas', 'azDashWorkItemDistCanvas'].forEach(id => {
       const c = document.getElementById(id);
       if (c) {
         const ctx = c.getContext('2d');
@@ -45,402 +133,682 @@ window.DashboardModule = {
       }
     });
 
-    // Show no project banner
-    const noProjBanner = document.getElementById('azDashNoProjectBanner');
-    if (noProjBanner) noProjBanner.classList.remove('hidden');
+    // Reset Critical Alerts Banner
+    const alertsBanner = document.getElementById('azDashCriticalAlertsBanner');
+    if (alertsBanner) alertsBanner.classList.add('hidden');
+    const alertsList = document.getElementById('azDashCriticalAlertsList');
+    if (alertsList) alertsList.innerHTML = '';
 
-    // Reset titles
-    const teamNameEl = document.getElementById('azDashTeamName');
-    if (teamNameEl) teamNameEl.textContent = 'Select a Project';
+    // Reset KPI Card 1: Work Items
+    const elWiActive = document.getElementById('dashKpiActiveWorkItems');
+    if (elWiActive) elWiActive.textContent = '—';
+    const elWiScope = document.getElementById('dashKpiTotalScopeBadge');
+    if (elWiScope) elWiScope.textContent = '0 items';
+    const elWiBugs = document.getElementById('dashKpiBugsCount');
+    if (elWiBugs) elWiBugs.textContent = '0';
+    const elWiClosed = document.getElementById('dashKpiClosedCount');
+    if (elWiClosed) elWiClosed.textContent = '0';
+    const elWiProg = document.getElementById('dashKpiWorkItemsProgress');
+    if (elWiProg) elWiProg.style.width = '0%';
 
-    const matrixTitleEl = document.getElementById('azDeployMatrixTitle');
-    if (matrixTitleEl) matrixTitleEl.textContent = 'Production Deployments';
+    // Reset KPI Card 2: Pipelines
+    const elPipeRate = document.getElementById('dashKpiPipelinePassRate');
+    if (elPipeRate) elPipeRate.textContent = '—';
+    const elPipeBadge = document.getElementById('dashKpiPipelineRateBadge');
+    if (elPipeBadge) elPipeBadge.textContent = '0% Pass';
+    const elPipeTotal = document.getElementById('dashKpiPipelineTotalRuns');
+    if (elPipeTotal) elPipeTotal.textContent = '0';
+    const elPipePassed = document.getElementById('dashKpiPipelinePassed');
+    if (elPipePassed) elPipePassed.textContent = '0';
+    const elPipeFailed = document.getElementById('dashKpiPipelineFailed');
+    if (elPipeFailed) elPipeFailed.textContent = '0';
+    const elPipeRunning = document.getElementById('dashKpiPipelineRunning');
+    if (elPipeRunning) elPipeRunning.textContent = '0';
+    const elPipeProg = document.getElementById('dashKpiPipelineProgress');
+    if (elPipeProg) elPipeProg.style.width = '0%';
 
-    const sprintTitleEl = document.getElementById('azBurndownSprintTitle');
-    if (sprintTitleEl) sprintTitleEl.textContent = 'Sprint Burndown';
+    // Reset KPI Card 3: Repos & PRs
+    const elPrCount = document.getElementById('dashKpiOpenPrsCount');
+    if (elPrCount) elPrCount.textContent = '—';
+    const elReposBadge = document.getElementById('dashKpiReposCountBadge');
+    if (elReposBadge) elReposBadge.textContent = '0 Repos';
+    const elActiveRepos = document.getElementById('dashKpiActiveReposCount');
+    if (elActiveRepos) elActiveRepos.textContent = '0';
+    const elActiveBranches = document.getElementById('dashKpiActiveBranchesCount');
+    if (elActiveBranches) elActiveBranches.textContent = '0';
+    const elPrProg = document.getElementById('dashKpiPrProgress');
+    if (elPrProg) elPrProg.style.width = '0%';
 
-    // Reset burndown metrics to dashes
-    const elCompletedPct = document.getElementById('azBdCompletedPct');
-    const elAvgBurndown = document.getElementById('azBdAvgBurndown');
-    const elRemainingWork = document.getElementById('azBdRemainingWork');
-    const elNotEstimated = document.getElementById('azBdNotEstimated');
+    // Reset KPI Card 4: Infrastructure
+    const elPools = document.getElementById('dashKpiOnlinePoolsCount');
+    if (elPools) elPools.textContent = '—';
+    const elEndpoints = document.getElementById('dashKpiEndpointsCount');
+    if (elEndpoints) elEndpoints.textContent = '0';
 
-    if (elCompletedPct) elCompletedPct.textContent = '—';
-    if (elAvgBurndown) elAvgBurndown.textContent = '—';
-    if (elRemainingWork) elRemainingWork.textContent = '—';
-    if (elNotEstimated) elNotEstimated.textContent = '—';
+    // Reset Visual Chart Legends
+    ['azLegendPipePassed', 'azLegendPipeFailed', 'azLegendPipeRunning',
+     'azLegendWiNew', 'azLegendWiActive', 'azLegendWiTesting', 'azLegendWiClosed'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '0';
+    });
 
-    // Reset query tiles to 0
-    const elActiveTasks = document.getElementById('countActiveTasks');
-    const elReadyTesting = document.getElementById('countReadyTesting');
-    const elCompletedStories = document.getElementById('countCompletedStories');
-    const elOpenStories = document.getElementById('countOpenStories');
-    const elActiveBugs = document.getElementById('countActiveBugs');
+    const ratioBadge = document.getElementById('dashPipelineHealthRatio');
+    if (ratioBadge) ratioBadge.textContent = '—';
 
-    if (elActiveTasks) elActiveTasks.textContent = '0';
-    if (elReadyTesting) elReadyTesting.textContent = '0';
-    if (elCompletedStories) elCompletedStories.textContent = '0';
-    if (elOpenStories) elOpenStories.textContent = '0';
-    if (elActiveBugs) elActiveBugs.textContent = '0';
+    const wiBadge = document.getElementById('dashWorkItemTotalCountBadge');
+    if (wiBadge) wiBadge.textContent = '0 Total';
 
-    // Clear deployment rings and show empty state
-    const stageHeaderContainer = document.getElementById('azDeployHeaderStages');
-    if (stageHeaderContainer) stageHeaderContainer.innerHTML = '';
-
-    const matrixBodyContainer = document.getElementById('azDeployMatrixBody');
-    if (matrixBodyContainer) {
-      matrixBodyContainer.innerHTML = `
-        <div class="az-empty-dash-state">
+    // Reset Open PRs Table
+    const prContainer = document.getElementById('azDashOpenPrContainer');
+    if (prContainer) {
+      prContainer.innerHTML = `
+        <div class="az-empty-dash-state" style="padding:24px 0;">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            <circle cx="18" cy="18" r="3"></circle>
+            <circle cx="6" cy="6" r="3"></circle>
+            <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+            <line x1="6" y1="9" x2="6" y2="21"></line>
           </svg>
-          <div style="font-weight:600; margin-top:6px;">No Project Selected</div>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Select a project from the top dropdown to view release and pipeline deployments.</div>
+          <div style="font-weight:600; margin-top:6px;">No Open Pull Requests</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Select a project or all pull requests are merged and approved.</div>
+        </div>
+      `;
+    }
+    const prBadge = document.getElementById('azDashPrCountBadge');
+    if (prBadge) prBadge.textContent = '0';
+
+    // Reset Recent Activity List
+    const actContainer = document.getElementById('azDashRecentActivityList');
+    if (actContainer) {
+      actContainer.innerHTML = `
+        <div class="az-empty-dash-state" style="padding:24px 0;">
+          <div style="font-size:11px; color:var(--text-muted);">No recent project activity recorded.</div>
         </div>
       `;
     }
 
-    // Reset team members list to empty state
-    this.renderTeamMembers([]);
+    // Reset Header & Show No Project Banner
+    const teamNameEl = document.getElementById('azDashTeamName');
+    if (teamNameEl) teamNameEl.textContent = 'Select a Project';
+
+    const noProjBanner = document.getElementById('azDashNoProjectBanner');
+    if (noProjBanner) noProjBanner.classList.remove('hidden');
+
+    const lastUpd = document.getElementById('dashLastUpdatedText');
+    if (lastUpd) lastUpd.textContent = 'Last updated: —';
   },
 
   async init(org, project, pat) {
-    this.currentOrg = org;
-    this.currentProject = project;
-    const auth = 'Basic ' + btoa(':' + pat);
-    const cleanProject = (project || '').trim();
-
-    if (!cleanProject) {
+    if (!org || !project || !pat) {
       this.reset();
-      window.HubApp.setStatus('Please select an Azure DevOps Project from the dropdown to load the Dashboard.', 'warning');
       return;
     }
 
-    // Hide no project banner
+    this.currentOrg = org;
+    this.currentProject = project;
+    this.currentPat = pat;
+
+    const cleanProject = project.trim();
+
+    // Read time range selector
+    const timeSelect = document.getElementById('dashTimeRangeSelect');
+    if (timeSelect) {
+      this.currentTimeRange = timeSelect.value || '7d';
+    }
+
+    // Update Header Toolbar & Hide No-Project Banner
+    const teamNameEl = document.getElementById('azDashTeamName');
+    if (teamNameEl) teamNameEl.textContent = cleanProject;
+
     const noProjBanner = document.getElementById('azDashNoProjectBanner');
     if (noProjBanner) noProjBanner.classList.add('hidden');
 
-    // Update Dashboard Title & Team Picker
-    const teamNameEl = document.getElementById('azDashTeamName');
-    if (teamNameEl) teamNameEl.textContent = `${cleanProject} Team`;
+    this.bindControls();
+    this.setLoading(true);
 
-    const matrixTitleEl = document.getElementById('azDeployMatrixTitle');
-    if (matrixTitleEl) matrixTitleEl.textContent = `${cleanProject} Deployments`;
+    const criticalAlerts = {
+      p1BugsCount: 0,
+      offlineAgentsCount: 0,
+      failedMainDeployments: 0
+    };
 
-    window.HubApp.setStatus(`Fetching live Azure DevOps data for "${cleanProject}"...`, 'info');
-
-    let currentSprintName = `${cleanProject} Active Sprint`;
-    let workItems = [];
-    let builds = [];
-    let releases = [];
-    let teamMembersMap = {};
-
-    // 1. Fetch Real Team Iteration / Sprint
     try {
-      const iterUrl = `https://dev.azure.com/${org}/${encodeURIComponent(cleanProject)}/_apis/work/teamsettings/iterations?$timeframe=current&api-version=6.0`;
-      const iRes = await fetch(iterUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-      if (iRes.ok) {
-        const iData = await iRes.json();
-        if (iData.value && iData.value.length > 0) {
-          currentSprintName = iData.value[0].name || currentSprintName;
-        }
-      }
-      if (currentSprintName === `${cleanProject} Active Sprint`) {
-        const allIterUrl = `https://dev.azure.com/${org}/${encodeURIComponent(cleanProject)}/_apis/work/teamsettings/iterations?api-version=6.0`;
-        const aRes = await fetch(allIterUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-        if (aRes.ok) {
-          const aData = await aRes.json();
-          if (aData.value && aData.value.length > 0) {
-            currentSprintName = aData.value[aData.value.length - 1].name || currentSprintName;
-          }
-        }
-      }
-    } catch (iterErr) {
-      console.warn('Sprint iteration notice:', iterErr);
+      // Concurrently aggregate all Project Overview Metrics
+      await Promise.allSettled([
+        this.loadWorkItemsOverview(cleanProject, criticalAlerts),
+        this.loadPipelinesOverview(cleanProject, criticalAlerts),
+        this.loadReposAndPrsOverview(cleanProject),
+        this.loadInfrastructureOverview(cleanProject, criticalAlerts),
+        this.loadRecentActivityOverview(cleanProject)
+      ]);
+
+      // Render the conditional Critical Alerts Banner
+      this.renderCriticalAlertsBanner(criticalAlerts);
+
+      // Update Last updated timestamp
+      this.updateLastUpdatedTimestamp();
+    } catch (err) {
+      console.error('Error during dashboard aggregation:', err);
+    } finally {
+      this.setLoading(false);
     }
+  },
 
-    const sprintTitleEl = document.getElementById('azBurndownSprintTitle');
-    if (sprintTitleEl) sprintTitleEl.textContent = `${currentSprintName} Burndown`;
-
-    // 2. Fetch Real Work Items via WIQL
+  // 1. Work Items Overview (WIQL & Status Distribution & P1 Bugs)
+  async loadWorkItemsOverview(cleanProject, criticalAlerts) {
     try {
-      const wiqlUrl = `https://dev.azure.com/${org}/${encodeURIComponent(cleanProject)}/_apis/wit/wiql?api-version=6.0&$top=500`;
-      let qRes = await fetch(wiqlUrl, {
+      const wiqlQuery = {
+        query: `SELECT [System.Id], [System.WorkItemType], [System.State], [System.Title], [System.AssignedTo], [System.ChangedDate], [Microsoft.VSTS.Common.Severity], [Microsoft.VSTS.Common.Priority] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.ChangedDate] DESC`
+      };
+
+      const wiqlUrl = `${encodeURIComponent(cleanProject)}/_apis/wit/wiql?$top=100&api-version=6.0`;
+      let wiqlRes = await this.fetchApi(wiqlUrl, {
         method: 'POST',
-        headers: { 'Authorization': auth, 'Accept': 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project ORDER BY [System.ChangedDate] DESC` })
+        body: JSON.stringify(wiqlQuery)
       });
 
-      if (!qRes.ok) {
-        // Fallback query with explicit escaped project name
-        qRes = await fetch(wiqlUrl, {
+      if (!wiqlRes || !wiqlRes.workItems || wiqlRes.workItems.length === 0) {
+        const fallbackWiql = {
+          query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '${cleanProject.replace(/'/g, "''")}' ORDER BY [System.ChangedDate] DESC`
+        };
+        wiqlRes = await this.fetchApi(wiqlUrl, {
           method: 'POST',
-          headers: { 'Authorization': auth, 'Accept': 'application/json', 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: `SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '${cleanProject.replace(/'/g, "''")}' ORDER BY [System.ChangedDate] DESC` })
+          body: JSON.stringify(fallbackWiql)
         });
       }
 
-      if (qRes.ok) {
-        const qData = await qRes.json();
-        const ids = (qData.workItems || []).map(w => w.id);
+      const workItemIds = (wiqlRes?.workItems || []).slice(0, 100).map(w => w.id);
+      let fullWorkItems = [];
 
-        if (ids.length > 0) {
-          // Fetch work item details in chunks of 50
-          const chunkSize = 50;
-          for (let i = 0; i < ids.length && i < 300; i += chunkSize) {
-            const chunkIds = ids.slice(i, i + chunkSize);
-            const detailsData = await window.HubApp.fetchAdo(
-              org,
-              `${encodeURIComponent(cleanProject)}/_apis/wit/workitems?ids=${chunkIds.join(',')}&$expand=all&api-version=6.0`,
-              auth
-            );
-            if (detailsData.value) {
-              workItems = workItems.concat(detailsData.value);
+      if (workItemIds.length > 0) {
+        for (let i = 0; i < workItemIds.length; i += 50) {
+          const chunk = workItemIds.slice(i, i + 50);
+          const batchUrl = `${encodeURIComponent(cleanProject)}/_apis/wit/workitems?ids=${chunk.join(',')}&$expand=all&api-version=6.0`;
+          const bData = await this.fetchApi(batchUrl);
+          if (bData?.value) {
+            fullWorkItems.push(...bData.value);
+          }
+        }
+      }
+
+      let activeCount = 0;
+      let highPriBugsCount = 0;
+      let closedCount = 0;
+      let newCount = 0;
+      let testingCount = 0;
+
+      const typeDistribution = { Stories: 0, Tasks: 0, Bugs: 0, Other: 0 };
+
+      fullWorkItems.forEach(item => {
+        const f = item.fields || {};
+        const state = (f['System.State'] || '').toLowerCase();
+        const type = (f['System.WorkItemType'] || '').toLowerCase();
+        const severity = String(f['Microsoft.VSTS.Common.Severity'] || '').toLowerCase();
+        const priority = Number(f['Microsoft.VSTS.Common.Priority']) || 0;
+
+        const isClosed = state === 'closed' || state === 'done' || state === 'resolved' || state === 'completed';
+        const isBug = type.includes('bug') || type.includes('defect');
+
+        if (isBug) {
+          typeDistribution.Bugs++;
+          if (!isClosed) {
+            // Count High-Priority / P1 bugs
+            if (severity.includes('1') || severity.includes('critical') || priority === 1) {
+              criticalAlerts.p1BugsCount++;
+              highPriBugsCount++;
+            } else {
+              highPriBugsCount++;
+            }
+          }
+        } else if (type.includes('story') || type.includes('user story') || type.includes('requirement')) {
+          typeDistribution.Stories++;
+        } else if (type.includes('task')) {
+          typeDistribution.Tasks++;
+        } else {
+          typeDistribution.Other++;
+        }
+
+        if (isClosed) {
+          closedCount++;
+        } else if (state === 'new' || state === 'to do' || state === 'proposed') {
+          newCount++;
+        } else if (state.includes('test') || state.includes('review') || state.includes('qa')) {
+          testingCount++;
+          activeCount++;
+        } else {
+          activeCount++;
+        }
+      });
+
+      const totalScope = fullWorkItems.length;
+      const completionPct = totalScope > 0 ? Math.round((closedCount / totalScope) * 100) : 0;
+
+      // Update KPI Card 1
+      const elActive = document.getElementById('dashKpiActiveWorkItems');
+      if (elActive) elActive.textContent = activeCount.toLocaleString();
+
+      const elTotalBadge = document.getElementById('dashKpiTotalScopeBadge');
+      if (elTotalBadge) elTotalBadge.textContent = `${totalScope} items`;
+
+      const elBugs = document.getElementById('dashKpiBugsCount');
+      if (elBugs) elBugs.textContent = highPriBugsCount.toLocaleString();
+
+      const elClosed = document.getElementById('dashKpiClosedCount');
+      if (elClosed) elClosed.textContent = closedCount.toLocaleString();
+
+      const elProg = document.getElementById('dashKpiWorkItemsProgress');
+      if (elProg) elProg.style.width = `${completionPct}%`;
+
+      // Render Work Item Status Distribution Chart
+      this.lastWorkItemDist = {
+        newCount,
+        activeCount,
+        testingCount,
+        closedCount,
+        totalScope,
+        typeDistribution
+      };
+      this.renderWorkItemDistribution(this.lastWorkItemDist);
+
+    } catch (err) {
+      console.warn('Error loading work items overview:', err);
+    }
+  },
+
+  // 2. Pipelines Overview (Pass Rate, Status Breakdown & Health Chart)
+  async loadPipelinesOverview(cleanProject, criticalAlerts) {
+    try {
+      const buildsUrl = `${encodeURIComponent(cleanProject)}/_apis/build/builds?queryOrder=queueTimeDescending&$top=150&api-version=6.0`;
+      const bData = await this.fetchApi(buildsUrl);
+      const rawBuilds = bData?.value || [];
+
+      // Filter by selected Time Range
+      const cutoff = this.getTimeRangeCutoff();
+      const builds = rawBuilds.filter(b => {
+        const t = new Date(b.finishTime || b.queueTime || b.startTime);
+        return !isNaN(t.getTime()) && t >= cutoff;
+      });
+
+      let passedCount = 0;
+      let failedCount = 0;
+      let runningCount = 0;
+
+      builds.forEach(b => {
+        const res = (b.result || '').toLowerCase();
+        const stat = (b.status || '').toLowerCase();
+        const branch = (b.sourceBranch || '').toLowerCase();
+
+        if (res === 'succeeded') {
+          passedCount++;
+        } else if (res === 'failed' || res === 'partiallysucceeded') {
+          failedCount++;
+          // Check if failure occurred on main/master branch
+          if (branch.includes('main') || branch.includes('master')) {
+            criticalAlerts.failedMainDeployments++;
+          }
+        } else if (stat === 'inprogress' || stat === 'notstarted') {
+          runningCount++;
+        }
+      });
+
+      const totalRuns = passedCount + failedCount + runningCount;
+      const evaluated = passedCount + failedCount;
+      const passRate = evaluated > 0 ? Math.round((passedCount / evaluated) * 100) : (totalRuns > 0 ? 100 : 0);
+
+      // Update KPI Card 2
+      const elPassRate = document.getElementById('dashKpiPipelinePassRate');
+      if (elPassRate) elPassRate.textContent = totalRuns > 0 ? `${passRate}%` : '—';
+
+      const elRateBadge = document.getElementById('dashKpiPipelineRateBadge');
+      if (elRateBadge) elRateBadge.textContent = totalRuns > 0 ? `${passRate}% Pass` : '0% Pass';
+
+      const elTotal = document.getElementById('dashKpiPipelineTotalRuns');
+      if (elTotal) elTotal.textContent = totalRuns.toLocaleString();
+
+      const elPassed = document.getElementById('dashKpiPipelinePassed');
+      if (elPassed) elPassed.textContent = passedCount.toLocaleString();
+
+      const elFailed = document.getElementById('dashKpiPipelineFailed');
+      if (elFailed) elFailed.textContent = failedCount.toLocaleString();
+
+      const elRunning = document.getElementById('dashKpiPipelineRunning');
+      if (elRunning) elRunning.textContent = runningCount.toLocaleString();
+
+      const elProg = document.getElementById('dashKpiPipelineProgress');
+      if (elProg) elProg.style.width = `${passRate}%`;
+
+      // Update Chart Header Badge
+      const ratioBadge = document.getElementById('dashPipelineHealthRatio');
+      if (ratioBadge) {
+        ratioBadge.textContent = `${passRate}% Pass Rate`;
+        ratioBadge.style.background = passRate >= 80 ? 'rgba(16, 124, 16, 0.15)' : 'rgba(209, 52, 56, 0.15)';
+        ratioBadge.style.color = passRate >= 80 ? '#107c10' : '#d13438';
+      }
+
+      // Render Visual 1: Pipeline Health Chart
+      this.lastPipelineHealth = { passed: passedCount, failed: failedCount, running: runningCount };
+      this.renderPipelineHealthChart(passedCount, failedCount, runningCount);
+
+    } catch (err) {
+      console.warn('Error loading pipelines overview:', err);
+    }
+  },
+
+  // 3. Repositories & Pull Requests (Active Repos, Open PRs Table)
+  async loadReposAndPrsOverview(cleanProject) {
+    try {
+      const reposUrl = `${encodeURIComponent(cleanProject)}/_apis/git/repositories?api-version=7.1-preview.1`;
+      const rData = await this.fetchApi(reposUrl);
+      const repos = rData?.value || [];
+
+      // Query active pull requests across all project repositories
+      let openPrs = [];
+      const prsUrl = `${encodeURIComponent(cleanProject)}/_apis/git/pullrequests?searchCriteria.status=active&api-version=6.0&$top=50`;
+      const prData = await this.fetchApi(prsUrl);
+      openPrs = prData?.value || [];
+
+      if (openPrs.length === 0 && repos.length > 0) {
+        for (const repo of repos.slice(0, 4)) {
+          const perRepoUrl = `${encodeURIComponent(cleanProject)}/_apis/git/repositories/${repo.id}/pullrequests?searchCriteria.status=active&api-version=6.0&$top=15`;
+          const d = await this.fetchApi(perRepoUrl);
+          if (d?.value && d.value.length > 0) {
+            openPrs.push(...d.value);
+          }
+        }
+      }
+
+      // Filter PRs by selected Time Range
+      const cutoff = this.getTimeRangeCutoff();
+      const filteredPrs = openPrs.filter(pr => {
+        const d = new Date(pr.creationDate);
+        return !isNaN(d.getTime()) && d >= cutoff;
+      });
+
+      const displayPrs = filteredPrs.length > 0 ? filteredPrs : openPrs;
+
+      // Update KPI Card 3
+      const elPrCount = document.getElementById('dashKpiOpenPrsCount');
+      if (elPrCount) elPrCount.textContent = openPrs.length.toLocaleString();
+
+      const elReposBadge = document.getElementById('dashKpiReposCountBadge');
+      if (elReposBadge) elReposBadge.textContent = `${repos.length} Repos`;
+
+      const elActiveRepos = document.getElementById('dashKpiActiveReposCount');
+      if (elActiveRepos) elActiveRepos.textContent = repos.length.toLocaleString();
+
+      const elActiveBranches = document.getElementById('dashKpiActiveBranchesCount');
+      if (elActiveBranches) elActiveBranches.textContent = openPrs.length.toLocaleString();
+
+      const elPrProg = document.getElementById('dashKpiPrProgress');
+      if (elPrProg) {
+        const prFill = Math.min(100, openPrs.length * 20);
+        elPrProg.style.width = `${prFill}%`;
+      }
+
+      // Update PR Count Badge
+      const prBadge = document.getElementById('azDashPrCountBadge');
+      if (prBadge) prBadge.textContent = openPrs.length.toLocaleString();
+
+      // Render Visual 3: Open PR Review Status Table
+      this.renderOpenPrTable(displayPrs);
+
+    } catch (err) {
+      console.warn('Error loading repos and PRs overview:', err);
+    }
+  },
+
+  // 4. Infrastructure Overview (Agent Pools & Service Connections)
+  async loadInfrastructureOverview(cleanProject, criticalAlerts) {
+    try {
+      let onlinePools = 0;
+      let totalPools = 0;
+      let offlineAgents = 0;
+
+      // 1. Agent Pools / Queues
+      const queuesUrl = `${encodeURIComponent(cleanProject)}/_apis/distributedtask/queues?api-version=6.0`;
+      const qData = await this.fetchApi(queuesUrl);
+      const queues = qData?.value || [];
+      totalPools = queues.length;
+      
+      queues.forEach(q => {
+        if (q.pool?.isOnline === false) offlineAgents++;
+        else onlinePools++;
+      });
+
+      if (totalPools === 0) {
+        const pData = await this.fetchApi('_apis/distributedtask/pools?api-version=6.0');
+        const pools = pData?.value || [];
+        totalPools = pools.length;
+        pools.forEach(p => {
+          if (p.offline) offlineAgents++;
+          else onlinePools++;
+        });
+      }
+
+      criticalAlerts.offlineAgentsCount += offlineAgents;
+
+      // 2. Service Endpoints / Cloud Connections
+      const epUrl = `${encodeURIComponent(cleanProject)}/_apis/serviceendpoint/endpoints?api-version=6.0`;
+      const epData = await this.fetchApi(epUrl);
+      const endpointsCount = (epData?.value || []).length;
+
+      // Update KPI Card 4
+      const elPools = document.getElementById('dashKpiOnlinePoolsCount');
+      if (elPools) {
+        elPools.textContent = totalPools > 0 ? `${onlinePools}/${totalPools}` : (endpointsCount > 0 ? `${endpointsCount}` : 'Operational');
+      }
+
+      const elEndpoints = document.getElementById('dashKpiEndpointsCount');
+      if (elEndpoints) elEndpoints.textContent = endpointsCount.toLocaleString();
+
+    } catch (err) {
+      console.warn('Error loading infrastructure overview:', err);
+    }
+  },
+
+  // 5. Recent Activity Stream (Commits, Pipeline Runs & Work Item Updates)
+  async loadRecentActivityOverview(cleanProject) {
+    try {
+      const activities = [];
+
+      // A. Recent Commits
+      const reposUrl = `${encodeURIComponent(cleanProject)}/_apis/git/repositories?api-version=7.1-preview.1`;
+      const rData = await this.fetchApi(reposUrl);
+      const repos = rData?.value || [];
+
+      if (repos.length > 0) {
+        for (const primaryRepo of repos.slice(0, 3)) {
+          const commitsUrl = `${encodeURIComponent(cleanProject)}/_apis/git/repositories/${primaryRepo.id}/commits?$top=5&api-version=6.0`;
+          const cData = await this.fetchApi(commitsUrl);
+          (cData?.value || []).forEach(c => {
+            activities.push({
+              type: 'commit',
+              title: c.comment ? c.comment.split('\n')[0] : 'Code commit pushed',
+              author: c.author?.name || 'Developer',
+              date: c.author?.date || c.committer?.date,
+              meta: primaryRepo.name
+            });
+          });
+        }
+      }
+
+      // B. Recent Completed Builds
+      const buildsUrl = `${encodeURIComponent(cleanProject)}/_apis/build/builds?queryOrder=queueTimeDescending&$top=8&api-version=6.0`;
+      const bData = await this.fetchApi(buildsUrl);
+      (bData?.value || []).forEach(b => {
+        const res = (b.result || 'started').toUpperCase();
+        activities.push({
+          type: 'build',
+          title: `Pipeline ${b.definition?.name || 'Build'} [${res}]`,
+          author: b.requestedFor?.displayName || 'CI/CD Engine',
+          date: b.finishTime || b.queueTime,
+          meta: `Build #${b.buildNumber || b.id}`
+        });
+      });
+
+      // Filter activities by selected Time Range
+      const cutoff = this.getTimeRangeCutoff();
+      const filtered = activities.filter(a => {
+        const d = new Date(a.date);
+        return !isNaN(d.getTime()) && d >= cutoff;
+      });
+
+      const displayActivities = filtered.length > 0 ? filtered : activities;
+      displayActivities.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+      // Render Visual 4: Recent Activity List
+      this.renderRecentActivity(displayActivities.slice(0, 10));
+
+    } catch (err) {
+      console.warn('Error loading recent activity:', err);
+    }
+  },
+
+  // Render Conditional Critical Alerts Banner
+  renderCriticalAlertsBanner(alerts) {
+    const banner = document.getElementById('azDashCriticalAlertsBanner');
+    const list = document.getElementById('azDashCriticalAlertsList');
+    if (!banner || !list) return;
+
+    const badges = [];
+
+    if (alerts.p1BugsCount > 0) {
+      badges.push(`
+        <span class="az-alert-pill" title="High-priority bugs awaiting resolution">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          ${alerts.p1BugsCount} Critical Bug${alerts.p1BugsCount > 1 ? 's' : ''} (Severity 1 / P1)
+        </span>
+      `);
+    }
+
+    if (alerts.offlineAgentsCount > 0) {
+      badges.push(`
+        <span class="az-alert-pill pill-warning" title="Agent queues currently offline">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect></svg>
+          ${alerts.offlineAgentsCount} Offline Agent${alerts.offlineAgentsCount > 1 ? 's' : ''}
+        </span>
+      `);
+    }
+
+    if (alerts.failedMainDeployments > 0) {
+      badges.push(`
+        <span class="az-alert-pill" title="Failed deployment on production/main branch">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          ${alerts.failedMainDeployments} Failed Main-Branch Run${alerts.failedMainDeployments > 1 ? 's' : ''}
+        </span>
+      `);
+    }
+
+    if (badges.length > 0) {
+      list.innerHTML = badges.join('');
+      banner.classList.remove('hidden');
+    } else {
+      banner.classList.add('hidden');
+      list.innerHTML = '';
+    }
+  },
+
+  // Visual 1: Render Pipeline Health Chart (Chart.js Doughnut)
+  renderPipelineHealthChart(passed, failed, running) {
+    const canvas = document.getElementById('azDashPipelineHealthCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (this.pipelineHealthChart) this.pipelineHealthChart.destroy();
+
+    // Update legend numbers
+    const lPassed = document.getElementById('azLegendPipePassed');
+    if (lPassed) lPassed.textContent = passed.toLocaleString();
+    const lFailed = document.getElementById('azLegendPipeFailed');
+    if (lFailed) lFailed.textContent = failed.toLocaleString();
+    const lRunning = document.getElementById('azLegendPipeRunning');
+    if (lRunning) lRunning.textContent = running.toLocaleString();
+
+    const isDark = document.body.classList.contains('theme-dark') || window.HubApp?.currentTheme === 'dark';
+    const total = passed + failed + running;
+
+    const dataValues = total > 0 ? [passed, failed, running] : [1];
+    const bgColors = total > 0
+      ? ['#107c10', '#d13438', '#0078d4']
+      : [isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'];
+
+    this.pipelineHealthChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: total > 0 ? ['Passed', 'Failed', 'In-Progress'] : ['No Runs'],
+        datasets: [{
+          data: dataValues,
+          backgroundColor: bgColors,
+          borderWidth: 2,
+          borderColor: isDark ? '#1e293b' : '#ffffff',
+          hoverOffset: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '72%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: total > 0,
+            backgroundColor: isDark ? '#0f172a' : '#1e293b',
+            titleColor: '#ffffff',
+            bodyColor: '#e2e8f0',
+            padding: 10,
+            callbacks: {
+              label: (context) => {
+                const val = context.parsed || 0;
+                const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+                return ` ${context.label}: ${val} runs (${pct}%)`;
+              }
             }
           }
         }
       }
-    } catch (wErr) {
-      console.warn('Work items query notice:', wErr);
-    }
-
-    // 3. Fetch Real Pipeline Builds & Releases
-    try {
-      const buildsUrl = `${encodeURIComponent(cleanProject)}/_apis/build/builds?queryOrder=queueTimeDescending&$top=30&api-version=6.0`;
-      const bData = await window.HubApp.fetchAdo(org, buildsUrl, auth);
-      builds = bData.value || [];
-
-      try {
-        const relUrl = `https://vsrm.dev.azure.com/${org}/${encodeURIComponent(cleanProject)}/_apis/release/releases?api-version=7.1-preview.8&$top=30&$expand=environments,artifacts`;
-        const rRes = await fetch(relUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-        if (rRes.ok) {
-          const rData = await rRes.json();
-          releases = rData.value || [];
-        }
-      } catch (rErr) {
-        console.warn('Release fetch notice:', rErr);
-      }
-    } catch (bErr) {
-      console.warn('Pipeline query notice:', bErr);
-    }
-
-    // 4. Process Real Work Items Metrics
-    let countActiveTasks = 0;
-    let countReadyTesting = 0;
-    let countCompletedStories = 0;
-    let countOpenStories = 0;
-    let countActiveBugs = 0;
-    let unestimatedCount = 0;
-
-    let stateCounts = {
-      closed: 0,
-      active: 0,
-      new: 0
-    };
-
-    workItems.forEach(w => {
-      const f = w.fields || {};
-      const type = (f['System.WorkItemType'] || '').toLowerCase();
-      const state = (f['System.State'] || '').toLowerCase();
-
-      // Collect real team members
-      if (f['System.AssignedTo']) {
-        const name = f['System.AssignedTo'].displayName || f['System.AssignedTo'].name;
-        const email = f['System.AssignedTo'].uniqueName || f['System.AssignedTo'].mailAddress || '';
-        if (name) {
-          if (!teamMembersMap[name]) {
-            teamMembersMap[name] = { name, email, count: 0 };
-          }
-          teamMembersMap[name].count++;
-        }
-      }
-      if (f['System.CreatedBy'] && !f['System.AssignedTo']) {
-        const name = f['System.CreatedBy'].displayName || f['System.CreatedBy'].name;
-        const email = f['System.CreatedBy'].uniqueName || f['System.CreatedBy'].mailAddress || '';
-        if (name && !teamMembersMap[name]) {
-          teamMembersMap[name] = { name, email, count: 1 };
-        }
-      }
-
-      // Check effort estimation
-      const effort = f['Microsoft.VSTS.Scheduling.StoryPoints'] || f['Microsoft.VSTS.Scheduling.Effort'] || f['Microsoft.VSTS.Scheduling.RemainingWork'];
-      if (!effort || effort === 0) {
-        unestimatedCount++;
-      }
-
-      const isClosed = state.includes('closed') || state.includes('done') || state.includes('resolved') || state.includes('completed') || state.includes('removed');
-      const isTesting = !isClosed && (state.includes('test') || state.includes('ready') || state.includes('review') || state.includes('qa'));
-      const isActive = !isClosed && (state.includes('active') || state.includes('in progress') || state.includes('doing') || state.includes('committed') || state.includes('development') || state.includes('to do') || state.includes('new') || state.includes('open') || state.includes('proposed') || state.includes('approved'));
-
-      if (isClosed) stateCounts.closed++;
-      else if (isTesting) stateCounts.active++;
-      else if (isActive) stateCounts.active++;
-      else stateCounts.new++;
-
-      // Active Tasks: Any non-closed Task or Issue on the board
-      if ((type.includes('task') || type.includes('issue') || type.includes('item')) && !isClosed) {
-        countActiveTasks++;
-      }
-      // Ready for Testing: Any work item in testing / review / qa
-      if (isTesting && !isClosed) {
-        countReadyTesting++;
-      }
-      // Completed User Stories / Work Items: Any closed item
-      if (isClosed) {
-        countCompletedStories++;
-      }
-      // Open User Stories / Backlog: Any open Story / PBI / Feature / Requirement
-      if ((type.includes('story') || type.includes('feature') || type.includes('requirement') || type.includes('backlog') || type.includes('epic') || type.includes('pbi')) && !isClosed) {
-        countOpenStories++;
-      }
-      // Active Bugs: Any open Bug / Defect
-      if ((type.includes('bug') || type.includes('defect')) && !isClosed) {
-        countActiveBugs++;
-      }
     });
-
-    // Also collect pipeline build requesters if work item assignees are few
-    builds.forEach(b => {
-      const req = b.requestedFor || b.requestedBy;
-      if (req && req.displayName) {
-        if (!teamMembersMap[req.displayName]) {
-          teamMembersMap[req.displayName] = { name: req.displayName, email: req.uniqueName || '', count: 1 };
-        } else {
-          teamMembersMap[req.displayName].count++;
-        }
-      }
-    });
-
-    // 5. Update Colored Query Tiles with REAL values (0 if no Azure Boards implemented)
-    const elActiveTasks = document.getElementById('countActiveTasks');
-    const elReadyTesting = document.getElementById('countReadyTesting');
-    const elCompletedStories = document.getElementById('countCompletedStories');
-    const elOpenStories = document.getElementById('countOpenStories');
-    const elActiveBugs = document.getElementById('countActiveBugs');
-
-    if (elActiveTasks) elActiveTasks.textContent = countActiveTasks;
-    if (elReadyTesting) elReadyTesting.textContent = countReadyTesting;
-    if (elCompletedStories) elCompletedStories.textContent = countCompletedStories;
-    if (elOpenStories) elOpenStories.textContent = countOpenStories;
-    if (elActiveBugs) elActiveBugs.textContent = countActiveBugs;
-
-    // 6. Calculate Real Burndown Scope (from actual work items)
-    const totalScope = workItems.length;
-    const remainingWork = countActiveTasks + countOpenStories + countActiveBugs;
-    const safeRemaining = Math.max(0, remainingWork);
-    const completedPct = totalScope > 0 ? Math.round(((totalScope - safeRemaining) / totalScope) * 100) : 0;
-    const avgBurndown = totalScope > 0 ? Math.max(1, Math.round(totalScope / 4)) : 0;
-
-    const elCompletedPct = document.getElementById('azBdCompletedPct');
-    const elAvgBurndown = document.getElementById('azBdAvgBurndown');
-    const elRemainingWork = document.getElementById('azBdRemainingWork');
-    const elNotEstimated = document.getElementById('azBdNotEstimated');
-
-    if (elCompletedPct) elCompletedPct.textContent = `${Math.max(0, Math.min(100, completedPct))}%`;
-    if (elAvgBurndown) elAvgBurndown.textContent = `${avgBurndown}`;
-    if (elRemainingWork) elRemainingWork.textContent = `${safeRemaining}`;
-    if (elNotEstimated) elNotEstimated.textContent = `${unestimatedCount}`;
-
-    // 7. Render Real Charts
-    this.renderBurndownChart(safeRemaining, totalScope, workItems);
-    this.renderCfdChart(stateCounts, workItems);
-    this.renderStoriesByStateChart(stateCounts);
-    this.renderDeploymentsMatrix(builds, releases);
-
-    // Fetch and render project-wise team members with full details
-    await this.fetchProjectTeamMembers(org, cleanProject, auth, workItems, builds);
-    this.renderTeamMembers(this.allTeamMembers);
-    this.bindMemberFilterEvents();
-
-    // 8. Update Top KPIs in Suite
-    window.HubApp.setKpis(
-      cleanProject,
-      'Active Deliverables',
-      totalScope,
-      'Deployment Completed',
-      countCompletedStories,
-      'Active Tasks & Bugs',
-      countActiveTasks + countActiveBugs
-    );
-
-    window.HubApp.setStatus(`Live Azure DevOps Dashboard loaded for "${cleanProject}" (${totalScope} total items, ${countCompletedStories} completed).`, 'success');
   },
 
-  renderBurndownChart(remainingVal, totalScopeVal, workItems) {
-    const canvas = document.getElementById('azBurndownCanvas');
+  // Visual 2: Render Work Item Status Distribution (Chart.js Bar Chart)
+  renderWorkItemDistribution(data) {
+    const canvas = document.getElementById('azDashWorkItemDistCanvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    if (this.burndownChart) this.burndownChart.destroy();
+    if (this.workItemDistChart) this.workItemDistChart.destroy();
 
-    const isDark = window.HubApp.currentTheme === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    // Update legend numbers
+    const lNew = document.getElementById('azLegendWiNew');
+    if (lNew) lNew.textContent = (data.newCount || 0).toLocaleString();
+    const lActive = document.getElementById('azLegendWiActive');
+    if (lActive) lActive.textContent = (data.activeCount || 0).toLocaleString();
+    const lTesting = document.getElementById('azLegendWiTesting');
+    if (lTesting) lTesting.textContent = (data.testingCount || 0).toLocaleString();
+    const lClosed = document.getElementById('azLegendWiClosed');
+    if (lClosed) lClosed.textContent = (data.closedCount || 0).toLocaleString();
+
+    const tBadge = document.getElementById('dashWorkItemTotalCountBadge');
+    if (tBadge) tBadge.textContent = `${(data.totalScope || 0).toLocaleString()} Total`;
+
+    const isDark = document.body.classList.contains('theme-dark') || window.HubApp?.currentTheme === 'dark';
     const textColor = isDark ? '#94a3b8' : '#64748b';
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.06)';
 
-    const labels = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5'];
-    
-    // Real progression based on total scope and remaining work
-    let remainingBars = [totalScopeVal, totalScopeVal, totalScopeVal, totalScopeVal, remainingVal];
-    if (totalScopeVal > 0) {
-      const step = Math.max(0, (totalScopeVal - remainingVal) / 4);
-      remainingBars = [
-        totalScopeVal,
-        Math.max(remainingVal, Math.round(totalScopeVal - step * 1)),
-        Math.max(remainingVal, Math.round(totalScopeVal - step * 2)),
-        Math.max(remainingVal, Math.round(totalScopeVal - step * 3)),
-        remainingVal
-      ];
-    } else {
-      remainingBars = [0, 0, 0, 0, 0];
-    }
-
-    const totalScopeLine = [totalScopeVal, totalScopeVal, totalScopeVal, totalScopeVal, totalScopeVal];
-    const idealStep = totalScopeVal / 4;
-    const idealLine = [
-      totalScopeVal,
-      Math.max(0, Math.round(totalScopeVal - idealStep * 1)),
-      Math.max(0, Math.round(totalScopeVal - idealStep * 2)),
-      Math.max(0, Math.round(totalScopeVal - idealStep * 3)),
-      0
-    ];
-
-    this.burndownChart = new Chart(ctx, {
+    this.workItemDistChart = new Chart(ctx, {
       type: 'bar',
       data: {
-        labels: labels,
-        datasets: [
-          {
-            type: 'bar',
-            label: 'Remaining Work',
-            data: remainingBars,
-            backgroundColor: '#0078d4',
-            borderRadius: 2,
-            barPercentage: 0.5,
-            order: 2
-          },
-          {
-            type: 'line',
-            label: 'Total Scope',
-            data: totalScopeLine,
-            borderColor: '#ea580c',
-            borderWidth: 2.5,
-            pointRadius: 0,
-            tension: 0,
-            fill: false,
-            order: 1
-          },
-          {
-            type: 'line',
-            label: 'Ideal Burndown',
-            data: idealLine,
-            borderColor: '#94a3b8',
-            borderWidth: 1.5,
-            borderDash: [4, 4],
-            pointRadius: 0,
-            tension: 0,
-            fill: false,
-            order: 3
-          }
-        ]
+        labels: ['New', 'Active', 'In Testing', 'Closed'],
+        datasets: [{
+          label: 'Items',
+          data: [data.newCount || 0, data.activeCount || 0, data.testingCount || 0, data.closedCount || 0],
+          backgroundColor: [
+            'rgba(2, 132, 199, 0.85)',
+            'rgba(0, 120, 212, 0.85)',
+            'rgba(234, 179, 8, 0.85)',
+            'rgba(16, 124, 16, 0.85)'
+          ],
+          borderColor: ['#0284c7', '#0078d4', '#eab308', '#107c10'],
+          borderWidth: 1,
+          borderRadius: 4
+        }]
       },
       options: {
         responsive: true,
@@ -448,107 +816,20 @@ window.DashboardModule = {
         plugins: {
           legend: { display: false },
           tooltip: {
-            backgroundColor: isDark ? '#1e293b' : '#0f172a',
-            padding: 8,
-            titleFont: { size: 11, weight: 'bold' },
-            bodyFont: { size: 11 }
+            backgroundColor: isDark ? '#0f172a' : '#1e293b',
+            titleColor: '#ffffff',
+            bodyColor: '#e2e8f0',
+            padding: 10
           }
         },
         scales: {
           x: {
             grid: { display: false },
-            ticks: { color: textColor, font: { size: 10 } }
+            ticks: { color: textColor, font: { size: 11, weight: '600' } }
           },
           y: {
             grid: { color: gridColor },
-            ticks: { color: textColor, font: { size: 10 } },
-            beginAtZero: true,
-            suggestedMax: Math.max(10, totalScopeVal + 2)
-          }
-        }
-      }
-    });
-  },
-
-  renderCfdChart(stateCounts, workItems) {
-    const canvas = document.getElementById('azCfdCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (this.cfdChart) this.cfdChart.destroy();
-
-    const isDark = window.HubApp.currentTheme === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-    const textColor = isDark ? '#94a3b8' : '#64748b';
-
-    // Generate real timeline dates
-    const dNow = new Date();
-    const d14 = new Date(dNow.getTime() - 14 * 86400000);
-    const d7 = new Date(dNow.getTime() - 7 * 86400000);
-    const d3 = new Date(dNow.getTime() - 3 * 86400000);
-
-    const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const timeline = [fmt(d14), fmt(d7), fmt(d3), fmt(dNow)];
-
-    const cClosed = stateCounts.closed || 0;
-    const cActive = stateCounts.active || 0;
-    const cNew = stateCounts.new || 0;
-
-    const closedData = [Math.max(0, Math.round(cClosed * 0.4)), Math.max(0, Math.round(cClosed * 0.7)), Math.max(0, Math.round(cClosed * 0.9)), cClosed];
-    const activeData = [Math.max(0, Math.round(cActive * 0.5)), Math.max(0, Math.round(cActive * 0.8)), cActive, cActive];
-    const newData = [cNew, Math.max(0, Math.round(cNew * 0.8)), Math.max(0, Math.round(cNew * 0.5)), cNew];
-
-    this.cfdChart = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: timeline,
-        datasets: [
-          {
-            label: 'Closed / Done',
-            data: closedData,
-            backgroundColor: 'rgba(16, 124, 16, 0.85)',
-            borderColor: '#107c10',
-            fill: 'origin',
-            pointRadius: 0,
-            tension: 0.3
-          },
-          {
-            label: 'Active / In Progress',
-            data: activeData,
-            backgroundColor: 'rgba(0, 120, 212, 0.85)',
-            borderColor: '#0078d4',
-            fill: '-1',
-            pointRadius: 0,
-            tension: 0.3
-          },
-          {
-            label: 'New / Proposed',
-            data: newData,
-            backgroundColor: 'rgba(148, 163, 184, 0.5)',
-            borderColor: '#94a3b8',
-            fill: '-1',
-            pointRadius: 0,
-            tension: 0.3
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: isDark ? '#1e293b' : '#0f172a',
-            padding: 8
-          }
-        },
-        scales: {
-          x: {
-            grid: { display: false },
-            ticks: { color: textColor, font: { size: 10 } }
-          },
-          y: {
-            grid: { color: gridColor },
-            ticks: { color: textColor, font: { size: 10 } },
+            ticks: { color: textColor, font: { size: 10 }, precision: 0 },
             beginAtZero: true
           }
         }
@@ -556,653 +837,334 @@ window.DashboardModule = {
     });
   },
 
-  renderStoriesByStateChart(stateCounts) {
-    const canvas = document.getElementById('azStoriesByStateCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (this.storiesStateChart) this.storiesStateChart.destroy();
-
-    const isDark = window.HubApp.currentTheme === 'dark';
-    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-    const textColor = isDark ? '#94a3b8' : '#64748b';
-
-    const closed = stateCounts.closed || 0;
-    const newVal = stateCounts.new || 0;
-    const active = stateCounts.active || 0;
-
-    this.storiesStateChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: ['Closed', 'New', 'Active'],
-        datasets: [
-          {
-            data: [closed, newVal, active],
-            backgroundColor: [
-              '#107c10', // Closed = Green
-              '#94a3b8', // New = Grey
-              '#0078d4'  // Active = Blue
-            ],
-            borderRadius: 2,
-            barThickness: 26
-          }
-        ]
-      },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: isDark ? '#1e293b' : '#0f172a',
-            padding: 8
-          }
-        },
-        scales: {
-          x: {
-            grid: { color: gridColor },
-            ticks: { color: textColor, font: { size: 10 } },
-            beginAtZero: true,
-            suggestedMax: Math.max(5, closed, newVal, active)
-          },
-          y: {
-            grid: { display: false },
-            ticks: { color: textColor, font: { size: 11, weight: 'bold' } }
-          }
-        }
-      }
-    });
+  updatePipelineMonthlyView() {
+    if (this.lastPipelineHealth) {
+      this.renderPipelineHealthChart(
+        this.lastPipelineHealth.passed,
+        this.lastPipelineHealth.failed,
+        this.lastPipelineHealth.running
+      );
+    }
+    if (this.lastWorkItemDist) {
+      this.renderWorkItemDistribution(this.lastWorkItemDist);
+    }
   },
 
-  renderDeploymentsMatrix(builds, releases) {
-    const stageHeaderContainer = document.getElementById('azDeployHeaderStages');
-    const matrixBodyContainer = document.getElementById('azDeployMatrixBody');
-    if (!matrixBodyContainer) return;
+  // Visual 3: Render Open PR Review Status Table
+  renderOpenPrTable(prs) {
+    const container = document.getElementById('azDashOpenPrContainer');
+    if (!container) return;
 
-    // 1. If Real Releases Exist
-    if (releases && releases.length > 0) {
-      // Collect environments from the first few releases
-      const sampleRelease = releases[0];
-      const envs = sampleRelease.environments || [];
+    if (!prs || prs.length === 0) {
+      container.innerHTML = `
+        <div class="az-empty-dash-state" style="padding:28px 0;">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color:#107c10;">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+            <polyline points="22 4 12 14.01 9 11.01"></polyline>
+          </svg>
+          <div style="font-weight:600; margin-top:8px;">All Pull Requests Reviewed</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">No open pull requests awaiting review in this project.</div>
+        </div>
+      `;
+      return;
+    }
 
-      if (stageHeaderContainer && envs.length > 0) {
-        const topRings = envs.slice(0, 3).map(env => {
-          const statusStr = (env.status || '').toLowerCase();
-          const isOk = statusStr === 'succeeded';
-          const icon = isOk ? '✓' : (statusStr === 'inprogress' ? '↻' : '•');
-          const color = isOk ? '#107c10' : (statusStr === 'inprogress' ? '#0078d4' : '#64748b');
+    const self = this;
+    const html = `
+      <table class="az-dash-pr-table">
+        <thead>
+          <tr>
+            <th style="width:70px;">PR ID</th>
+            <th>Title &amp; Target</th>
+            <th>Repository</th>
+            <th>Author</th>
+            <th>Review Status</th>
+            <th style="text-align:right;">Age</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${prs.map(pr => {
+            const title = self.escapeHtml(pr.title || 'Untitled Pull Request');
+            const targetBranch = self.escapeHtml((pr.targetRefName || '').replace('refs/heads/', ''));
+            const sourceBranch = self.escapeHtml((pr.sourceRefName || '').replace('refs/heads/', ''));
+            const repoName = self.escapeHtml(pr.repository?.name || 'Repository');
+            const authorName = self.escapeHtml(pr.createdBy?.displayName || 'Author');
+            const initials = (authorName.split(' ').map(n => n[0]).join('') || 'PR').substring(0, 2).toUpperCase();
+            const relAge = self.formatRelativeTime(pr.creationDate);
+            const prUrl = pr._links?.web?.href || `https://dev.azure.com/${self.currentOrg}/${encodeURIComponent(self.currentProject)}/_git/${encodeURIComponent(pr.repository?.name || '')}/pullrequest/${pr.pullRequestId}`;
+
+            // Votes status summary
+            const reviewers = pr.reviewers || [];
+            const approvedCount = reviewers.filter(r => r.vote > 0).length;
+            const waitingCount = reviewers.filter(r => r.vote === 0).length;
+            const rejectedCount = reviewers.filter(r => r.vote < 0).length;
+
+            let statusBadge = '<span class="az-kpi-chip chip-blue">Under Review</span>';
+            if (rejectedCount > 0) statusBadge = '<span class="az-kpi-chip chip-red">Changes Requested</span>';
+            else if (approvedCount > 0) statusBadge = `<span class="az-kpi-chip chip-green">✓ ${approvedCount} Approved</span>`;
+            else if (waitingCount > 0) statusBadge = `<span class="az-kpi-chip chip-purple">${waitingCount} Reviewer${waitingCount > 1 ? 's' : ''}</span>`;
+
+            return `
+              <tr>
+                <td><strong style="color:var(--azure-blue);">#${pr.pullRequestId}</strong></td>
+                <td>
+                  <a href="${prUrl}" target="_blank" rel="noopener" class="az-pr-title-link">${title}</a>
+                  <div class="az-pr-branch-tag">${sourceBranch} → ${targetBranch}</div>
+                </td>
+                <td><span class="az-pr-repo-badge">${repoName}</span></td>
+                <td>
+                  <div class="az-pr-author-cell">
+                    <span class="az-pr-avatar">${initials}</span>
+                    <span>${authorName}</span>
+                  </div>
+                </td>
+                <td>${statusBadge}</td>
+                <td style="text-align:right; font-size:11px; color:var(--text-muted);">${relAge}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+
+    container.innerHTML = html;
+  },
+
+  // Visual 4: Render Recent Activity Stream
+  renderRecentActivity(activities) {
+    const container = document.getElementById('azDashRecentActivityList');
+    if (!container) return;
+
+    if (!activities || activities.length === 0) {
+      container.innerHTML = `
+        <div class="az-empty-dash-state" style="padding:24px 0;">
+          <div style="font-size:11px; color:var(--text-muted);">No recent project activity recorded.</div>
+        </div>
+      `;
+      return;
+    }
+
+    const self = this;
+    const html = `
+      <div class="az-activity-feed">
+        ${activities.map(act => {
+          const type = act.type || 'commit';
+          const iconClass = type === 'build' ? 'act-build' : (type === 'pr' ? 'act-pr' : (type === 'wi' ? 'act-wi' : 'act-commit'));
+          const relTime = self.formatRelativeTime(act.date);
+
+          let iconSvg = '';
+          if (type === 'build') {
+            iconSvg = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+          } else if (type === 'pr') {
+            iconSvg = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>';
+          } else if (type === 'wi') {
+            iconSvg = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line></svg>';
+          } else {
+            iconSvg = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="4"></circle><line x1="1.05" y1="12" x2="7" y2="12"></line><line x1="17.01" y1="12" x2="22.96" y2="12"></line></svg>';
+          }
 
           return `
-            <div class="az-ring-card">
-              <div class="az-ring-top" style="background:${color};" title="${env.name}">${env.name}</div>
-              <div class="az-ring-body">
-                <span style="color:${color}; font-weight:700;">${icon}</span>
-                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${env.name}</span>
+            <div class="az-act-item">
+              <div class="az-act-icon-box ${iconClass}">
+                ${iconSvg}
+              </div>
+              <div class="az-act-desc">
+                <div style="font-weight:600; color:var(--text-main);">${self.escapeHtml(act.title)}</div>
+                <div style="font-size:10.5px; color:var(--text-muted); margin-top:1px;">
+                  <span>${self.escapeHtml(act.author)}</span>
+                  ${act.meta ? ` • <span style="color:var(--azure-blue); font-weight:500;">${self.escapeHtml(act.meta)}</span>` : ''}
+                </div>
+                <div class="az-act-time">${relTime}</div>
               </div>
             </div>
           `;
-        }).join('');
-        stageHeaderContainer.innerHTML = topRings;
-      }
-
-      // Render release rows
-      const rowsHtml = releases.slice(0, 5).map(rel => {
-        const relEnvs = rel.environments || [];
-        const pills = relEnvs.map(env => {
-          const st = (env.status || '').toLowerCase();
-          if (st === 'succeeded') return `<span class="az-stage-box succeeded" title="${env.name}: Succeeded">✓</span>`;
-          if (st === 'inprogress') return `<span class="az-stage-box inprogress" title="${env.name}: In Progress">↻</span>`;
-          if (st === 'rejected' || st === 'failed') return `<span class="az-stage-box failed" title="${env.name}: Failed">✕</span>`;
-          return `<span class="az-stage-box skipped" title="${env.name}: ${env.status || 'Skipped'}">-</span>`;
-        }).join('');
-
-        return `
-          <div class="az-matrix-row">
-            <a href="javascript:void(0)" class="az-matrix-rel-name" title="${rel.name}">${rel.name}</a>
-            <div class="az-stage-pills-row">${pills}</div>
-          </div>
-        `;
-      }).join('');
-
-      matrixBodyContainer.innerHTML = rowsHtml;
-      return;
-    }
-
-    // 2. If Pipeline Builds Exist
-    if (builds && builds.length > 0) {
-      if (stageHeaderContainer) {
-        stageHeaderContainer.innerHTML = `
-          <div class="az-ring-card">
-            <div class="az-ring-top" style="background:#107c10;">Build CI</div>
-            <div class="az-ring-body"><span style="color:#107c10; font-weight:700;">✓</span><span>Build Pipeline</span></div>
-          </div>
-          <div class="az-ring-card">
-            <div class="az-ring-top" style="background:#0078d4;">Validation</div>
-            <div class="az-ring-body"><span style="color:#0078d4; font-weight:700;">✓</span><span>Code Tests</span></div>
-          </div>
-          <div class="az-ring-card">
-            <div class="az-ring-top" style="background:#107c10;">Delivery</div>
-            <div class="az-ring-body"><span style="color:#107c10; font-weight:700;">✓</span><span>Deployment</span></div>
-          </div>
-        `;
-      }
-
-      const rowsHtml = builds.slice(0, 5).map(b => {
-        const name = b.buildNumber || b.definition?.name || `Build #${b.id}`;
-        const isSuccess = (b.result || b.status || '').toLowerCase().includes('success');
-        const isFailed = (b.result || '').toLowerCase().includes('fail');
-        const isInProgress = (b.status || '').toLowerCase().includes('inprog');
-
-        const p1 = isSuccess ? `<span class="az-stage-box succeeded" title="Build: Succeeded">✓</span>` : (isFailed ? `<span class="az-stage-box failed" title="Build: Failed">✕</span>` : `<span class="az-stage-box inprogress" title="Build: In Progress">↻</span>`);
-        const p2 = isSuccess ? `<span class="az-stage-box succeeded" title="Tests: Passed">✓</span>` : (isFailed ? `<span class="az-stage-box failed" title="Tests: Failed">✕</span>` : `<span class="az-stage-box skipped" title="Tests: Pending">-</span>`);
-        const p3 = isSuccess ? `<span class="az-stage-box succeeded" title="Deployment Completed">✓</span>` : `<span class="az-stage-box skipped" title="Delivery">-</span>`;
-
-        return `
-          <div class="az-matrix-row">
-            <a href="javascript:void(0)" class="az-matrix-rel-name" title="${name}">${name}</a>
-            <div class="az-stage-pills-row">${p1}${p2}${p3}</div>
-          </div>
-        `;
-      }).join('');
-
-      matrixBodyContainer.innerHTML = rowsHtml;
-      return;
-    }
-    // 3. Clean Empty State when no deployments or builds exist
-    if (stageHeaderContainer) stageHeaderContainer.innerHTML = '';
-    matrixBodyContainer.innerHTML = `
-      <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:12px;">
-        No pipeline runs or release deployments found for this project.
+        }).join('')}
       </div>
     `;
+
+    container.innerHTML = html;
   },
 
-  async fetchProjectTeamMembers(org, cleanProject, auth, workItems = [], builds = []) {
-    const membersMap = {};
-    const teamsList = [];
-    const discoveredGroups = [];
+  // Event Listeners & Interaction Binding
+  bindControls() {
+    if (this.eventsBound) return;
+    this.eventsBound = true;
 
-    const addMember = (name, email, imageUrl, isAdmin, teamOrRole) => {
-      const cleanName = (name || '').trim();
-      const cleanEmail = (email || '').trim();
-      if (!cleanName && !cleanEmail) return;
-
-      if (cleanEmail === 'service-principal@azure.net' || cleanName.toLowerCase().startsWith('microsoft.visualstudio.services')) {
-        return;
+    // Time Range Selector
+    document.getElementById('dashTimeRangeSelect')?.addEventListener('change', (e) => {
+      this.currentTimeRange = e.target.value || '7d';
+      if (this.currentOrg && this.currentProject && this.currentPat) {
+        this.init(this.currentOrg, this.currentProject, this.currentPat);
       }
+    });
 
-      // Determine lookup key
-      let key = cleanEmail && cleanEmail.includes('@') ? cleanEmail.toLowerCase() : '';
-      if (!key) {
-        key = cleanName.toLowerCase();
+    // Refresh Dashboard Button
+    document.getElementById('btnRefreshDashboard')?.addEventListener('click', () => {
+      if (this.currentOrg && this.currentProject && this.currentPat) {
+        this.init(this.currentOrg, this.currentProject, this.currentPat);
       }
+    });
 
-      // Check if already in map by email or name
-      const existingKey = membersMap[key] ? key : Object.keys(membersMap).find(k => {
-        const m = membersMap[k];
-        return (cleanEmail && m.email && m.email.toLowerCase() === cleanEmail.toLowerCase()) ||
-               (cleanName && m.name && m.name.toLowerCase() === cleanName.toLowerCase());
-      });
+    // Click-to-Navigate Deep Links for Overview KPI Cards
+    document.getElementById('kpiCardWorkItems')?.addEventListener('click', () => {
+      if (window.HubApp && typeof window.HubApp.switchView === 'function') {
+        window.HubApp.switchView('workitems');
+        window.HubApp.triggerActiveInspect();
+      }
+    });
 
-      if (existingKey) {
-        const existing = membersMap[existingKey];
-        if (cleanName && (!existing.name || existing.name === existing.email)) {
-          existing.name = cleanName;
-        }
-        if (cleanEmail && !existing.email) {
-          existing.email = cleanEmail;
-        }
-        if (imageUrl && !existing.imageUrl) {
-          existing.imageUrl = imageUrl;
-        }
-        if (isAdmin) {
-          existing.isAdmin = true;
-        }
-        if (teamOrRole && !existing.teams.includes(teamOrRole)) {
-          existing.teams.push(teamOrRole);
-        }
+    document.getElementById('kpiCardPipelines')?.addEventListener('click', () => {
+      if (window.HubApp && typeof window.HubApp.switchView === 'function') {
+        window.HubApp.switchView('pipelines');
+        window.HubApp.triggerActiveInspect();
+      }
+    });
+
+    document.getElementById('kpiCardReposPrs')?.addEventListener('click', () => {
+      if (window.HubApp && typeof window.HubApp.switchView === 'function') {
+        window.HubApp.switchView('repositories');
+        window.HubApp.triggerActiveInspect();
+      }
+    });
+
+    document.getElementById('kpiCardInfrastructure')?.addEventListener('click', () => {
+      if (window.HubApp && typeof window.HubApp.switchView === 'function') {
+        window.HubApp.switchView('agentpools');
+        window.HubApp.triggerActiveInspect();
+      }
+    });
+
+    // Jump to PRs view button
+    document.getElementById('btnDashJumpToPrs')?.addEventListener('click', () => {
+      if (window.HubApp && typeof window.HubApp.switchView === 'function') {
+        window.HubApp.switchView('repositories');
+        window.HubApp.triggerActiveInspect();
+      }
+    });
+
+    // Fullscreen Toggle
+    document.getElementById('btnDashFullscreen')?.addEventListener('click', () => {
+      const container = document.getElementById('view-dashboard');
+      if (!container) return;
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => console.warn('Fullscreen notice:', err));
       } else {
-        membersMap[key] = {
-          id: key,
-          name: cleanName || cleanEmail,
-          email: cleanEmail,
-          imageUrl: imageUrl || '',
-          isAdmin: !!isAdmin,
-          teams: teamOrRole ? [teamOrRole] : ['Project Member'],
-          deliverables: 0
-        };
-      }
-    };
-
-    // 1. Discover ALL Project Teams and fetch all members with pagination
-    try {
-      const teamsUrl = `https://dev.azure.com/${org}/_apis/projects/${encodeURIComponent(cleanProject)}/teams?$mine=false&$top=500&api-version=6.0`;
-      const tRes = await fetch(teamsUrl, {
-        headers: { 'Authorization': auth, 'Accept': 'application/json' }
-      });
-      if (tRes.ok) {
-        const tData = await tRes.json();
-        const teams = tData.value || [];
-        teamsList.push(...teams);
-
-        await Promise.all(teams.map(async (team) => {
-          try {
-            const teamIdOrName = team.id || team.name;
-            let skip = 0;
-            const top = 500;
-            let hasMore = true;
-
-            while (hasMore && skip < 5000) {
-              const mUrl = `https://dev.azure.com/${org}/_apis/projects/${encodeURIComponent(cleanProject)}/teams/${encodeURIComponent(teamIdOrName)}/members?$top=${top}&$skip=${skip}&api-version=6.0`;
-              const mRes = await fetch(mUrl, {
-                headers: { 'Authorization': auth, 'Accept': 'application/json' }
-              });
-              if (!mRes.ok) break;
-
-              const mData = await mRes.json();
-              const mems = mData.value || [];
-              mems.forEach(m => {
-                const identity = m.identity || m;
-                const name = identity.displayName || identity.name || '';
-                const email = identity.uniqueName || identity.mailAddress || '';
-                const imageUrl = identity.imageUrl || '';
-                const isAdmin = !!m.isTeamAdmin;
-                addMember(name, email, imageUrl, isAdmin, team.name);
-              });
-
-              if (mems.length < top) {
-                hasMore = false;
-              } else {
-                skip += top;
-              }
-            }
-          } catch (mErr) {
-            console.warn(`Team "${team.name}" query notice:`, mErr);
-          }
-        }));
-      }
-    } catch (teamsErr) {
-      console.warn('Project teams discovery notice:', teamsErr);
-    }
-
-    // 2. Query Project Scope Descriptor & Graph APIs (All project users & security groups)
-    try {
-      const projMetaUrl = `https://dev.azure.com/${org}/_apis/projects/${encodeURIComponent(cleanProject)}?api-version=7.1-preview.1`;
-      const pRes = await fetch(projMetaUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-      if (pRes.ok) {
-        const pData = await pRes.json();
-        const projectId = pData.id;
-
-        let scopeDescriptor = '';
-        try {
-          const descUrl = `https://vssps.dev.azure.com/${org}/_apis/graph/descriptors/${projectId}?api-version=7.1-preview.1`;
-          const dRes = await fetch(descUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-          if (dRes.ok) {
-            const dData = await dRes.json();
-            scopeDescriptor = dData.value || '';
-          }
-        } catch (descErr) {
-          console.warn('Scope descriptor query notice:', descErr);
-        }
-
-        if (scopeDescriptor) {
-          // 2A: Query all Graph Users directly within this Project Scope
-          try {
-            let contToken = '';
-            let safetyCount = 0;
-            do {
-              safetyCount++;
-              const tokenParam = contToken ? `&continuationToken=${encodeURIComponent(contToken)}` : '';
-              const gUsersUrl = `https://vssps.dev.azure.com/${org}/_apis/graph/users?scopeDescriptor=${encodeURIComponent(scopeDescriptor)}${tokenParam}&api-version=7.1-preview.1`;
-              const guRes = await fetch(gUsersUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-              if (guRes.ok) {
-                const guData = await guRes.json();
-                (guData.value || []).forEach(u => {
-                  const name = u.displayName || u.principalName;
-                  const email = u.principalName || u.mailAddress || '';
-                  const avatar = u._links?.avatar?.href || '';
-                  addMember(name, email, avatar, false, 'Project Member');
-                });
-                contToken = guRes.headers.get('x-ms-continuationtoken') || guData.continuationToken || '';
-              } else {
-                break;
-              }
-            } while (contToken && safetyCount < 20);
-          } catch (guErr) {
-            console.warn('Graph users scope query notice:', guErr);
-          }
-
-          // 2B: Query Project Security Groups (Contributors, Project Administrators, Readers)
-          try {
-            let gContToken = '';
-            const groups = [];
-            let gSafety = 0;
-            do {
-              gSafety++;
-              const tokenParam = gContToken ? `&continuationToken=${encodeURIComponent(gContToken)}` : '';
-              const grpUrl = `https://vssps.dev.azure.com/${org}/_apis/graph/groups?scopeDescriptor=${encodeURIComponent(scopeDescriptor)}${tokenParam}&api-version=7.1-preview.1`;
-              const grpRes = await fetch(grpUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-              if (grpRes.ok) {
-                const grpData = await grpRes.json();
-                groups.push(...(grpData.value || []));
-                gContToken = grpRes.headers.get('x-ms-continuationtoken') || grpData.continuationToken || '';
-              } else {
-                break;
-              }
-            } while (gContToken && gSafety < 20);
-
-            discoveredGroups.push(...groups);
-
-            await Promise.all(groups.map(async (grp) => {
-              const groupName = grp.displayName || grp.name || '';
-              const isGrpAdmin = groupName.toLowerCase().includes('admin');
-              try {
-                const memsUrl = `https://vssps.dev.azure.com/${org}/_apis/graph/memberships/${grp.descriptor}?direction=down&api-version=7.1-preview.1`;
-                const memsRes = await fetch(memsUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-                if (memsRes.ok) {
-                  const memsData = await memsRes.json();
-                  const memberDescriptors = (memsData.value || []).map(m => m.memberDescriptor);
-
-                  await Promise.all(memberDescriptors.map(async (mDesc) => {
-                    try {
-                      const uUrl = `https://vssps.dev.azure.com/${org}/_apis/graph/users/${mDesc}?api-version=7.1-preview.1`;
-                      const uRes = await fetch(uUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-                      if (uRes.ok) {
-                        const uData = await uRes.json();
-                        addMember(uData.displayName, uData.principalName || uData.mailAddress, uData._links?.avatar?.href || '', isGrpAdmin, groupName);
-                      }
-                    } catch (ue) {}
-                  }));
-                }
-              } catch (me) {}
-            }));
-          } catch (gErr) {
-            console.warn('Graph groups query notice:', gErr);
-          }
-        }
-      }
-    } catch (pErr) {
-      console.warn('Project graph metadata notice:', pErr);
-    }
-
-    // 3. Sync with AccessModule cached items if available
-    try {
-      if (window.AccessModule && Array.isArray(window.AccessModule.items) && window.AccessModule.items.length > 0) {
-        window.AccessModule.items.forEach(row => {
-          if (row.ProjectName === cleanProject && row.UserDisplayName && !row.UserDisplayName.includes('(No Direct Members)')) {
-            const isAdmin = (row.GroupRole || '').toLowerCase().includes('admin') || (row.GroupName || '').toLowerCase().includes('admin');
-            const email = (row.MailAddress && row.MailAddress !== '-') ? row.MailAddress : (row.UserPrincipal !== '-' ? row.UserPrincipal : '');
-            addMember(row.UserDisplayName, email, '', isAdmin, row.GroupName || 'Contributor');
-          }
-        });
-      }
-    } catch (accErr) {
-      console.warn('AccessModule sync notice:', accErr);
-    }
-
-    // 4. Correlate with work items to get deliverables and include assignees/creators
-    workItems.forEach(w => {
-      const f = w.fields || {};
-      const assigned = f['System.AssignedTo'];
-      if (assigned) {
-        const name = assigned.displayName || assigned.name;
-        const email = assigned.uniqueName || assigned.mailAddress || '';
-        addMember(name, email, assigned.imageUrl || '', false, 'Work Items Assignee');
-
-        const matchKey = (email && email.includes('@')) ? email.toLowerCase() : (name || '').toLowerCase();
-        const existing = membersMap[matchKey] || Object.values(membersMap).find(m =>
-          (email && m.email && m.email.toLowerCase() === email.toLowerCase()) ||
-          (name && m.name && m.name.toLowerCase() === name.toLowerCase())
-        );
-        if (existing) {
-          existing.deliverables = (existing.deliverables || 0) + 1;
-        }
-      }
-
-      const creator = f['System.CreatedBy'];
-      if (creator) {
-        const name = creator.displayName || creator.name;
-        const email = creator.uniqueName || creator.mailAddress || '';
-        addMember(name, email, creator.imageUrl || '', false, 'Backlog Contributor');
-      }
-
-      const changedBy = f['System.ChangedBy'];
-      if (changedBy) {
-        const name = changedBy.displayName || changedBy.name;
-        const email = changedBy.uniqueName || changedBy.mailAddress || '';
-        addMember(name, email, changedBy.imageUrl || '', false, 'Backlog Contributor');
+        document.exitFullscreen().catch(err => console.warn('Exit fullscreen notice:', err));
       }
     });
 
-    // 5. Correlate with builds to include pipeline authors
-    builds.forEach(b => {
-      const req = b.requestedFor || b.requestedBy;
-      if (req && req.displayName) {
-        addMember(req.displayName, req.uniqueName || '', req.imageUrl || '', false, 'CI/CD Contributor');
+    // Project Picker Toolbar Dropdown
+    const pickerBtn = document.getElementById('azDashTeamPicker');
+    const menuEl = document.getElementById('azDashProjectMenu');
+    const searchInput = document.getElementById('azDashProjectSearch');
+
+    pickerBtn?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menuEl?.classList.toggle('hidden');
+      if (!menuEl?.classList.contains('hidden')) {
+        this.populateProjectPickerMenu();
+        searchInput?.focus();
       }
     });
 
-    // 6. Correlate with Git repository commits
-    try {
-      const repos = (window.HubApp && Array.isArray(window.HubApp.cachedRepos)) ? window.HubApp.cachedRepos.slice(0, 5) : [];
-      if (repos.length > 0) {
-        await Promise.all(repos.map(async (repo) => {
-          try {
-            const commitsUrl = `https://dev.azure.com/${org}/${encodeURIComponent(cleanProject)}/_apis/git/repositories/${encodeURIComponent(repo.id || repo.name)}/commits?$top=50&api-version=6.0`;
-            const cRes = await fetch(commitsUrl, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-            if (cRes.ok) {
-              const cData = await cRes.json();
-              (cData.value || []).forEach(c => {
-                const author = c.author || c.committer;
-                if (author && author.name) {
-                  addMember(author.name, author.email || '', '', false, 'Git Committer');
-                }
-              });
-            }
-          } catch (ce) {}
-        }));
-      }
-    } catch (repoErr) {
-      console.warn('Git commits scan notice:', repoErr);
-    }
-
-    this.allTeams = teamsList;
-    this.allGroups = discoveredGroups;
-    this.allTeamMembers = Object.values(membersMap).sort((a, b) => {
-      if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
-      if (b.deliverables !== a.deliverables) return b.deliverables - a.deliverables;
-      return a.name.localeCompare(b.name);
+    searchInput?.addEventListener('input', (e) => {
+      this.filterProjectPickerMenu(e.target.value);
     });
 
-    return this.allTeamMembers;
+    document.addEventListener('click', (e) => {
+      if (menuEl && !menuEl.classList.contains('hidden')) {
+        if (!menuEl.contains(e.target) && !pickerBtn?.contains(e.target)) {
+          menuEl.classList.add('hidden');
+        }
+      }
+    });
+
+    document.getElementById('btnBannerSelectProject')?.addEventListener('click', () => {
+      pickerBtn?.click();
+    });
   },
 
-  renderTeamMembers(members = this.allTeamMembers) {
-    const listEl = document.getElementById('azTeamMembersList');
-    const badgeEl = document.getElementById('azTeamTotalBadge');
-    const controlsEl = document.getElementById('azTeamControls');
-    const teamSelectEl = document.getElementById('azTeamFilterSelect');
-    const subtitleEl = document.getElementById('azTeamSubtitle');
-
+  populateProjectPickerMenu() {
+    const listEl = document.getElementById('azDashProjectList');
     if (!listEl) return;
 
-    if (!this.currentProject) {
-      if (badgeEl) badgeEl.textContent = '0';
-      if (controlsEl) controlsEl.classList.add('hidden');
-      if (subtitleEl) subtitleEl.textContent = 'Project teams & contributors';
-      listEl.innerHTML = `
-        <div class="az-empty-dash-state">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-          </svg>
-          <div style="font-weight:600; margin-top:6px;">No Project Selected</div>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">Select a project to view its team members.</div>
-        </div>
-      `;
-      return;
-    }
-
-    if (badgeEl) badgeEl.textContent = `${this.allTeamMembers.length || members.length}`;
-    if (subtitleEl) subtitleEl.textContent = `${this.currentProject} team members & contributors (${this.allTeamMembers.length || members.length} total)`;
-    if (controlsEl) controlsEl.classList.remove('hidden');
-
-    // Populate team filter dropdown with all discovered teams and groups
-    if (teamSelectEl) {
-      const options = [{ value: 'all', label: `All Members (${this.allTeamMembers.length || members.length})` }];
-      
-      this.allTeams.forEach(t => {
-        options.push({ value: t.name, label: `Team: ${t.name}` });
-      });
-
-      const uniqueRoles = new Set();
-      this.allTeamMembers.forEach(m => {
-        (m.teams || []).forEach(t => {
-          if (!this.allTeams.some(team => team.name === t)) {
-            uniqueRoles.add(t);
+    let projects = [];
+    if (window.HubApp && Array.isArray(window.HubApp.cachedProjects) && window.HubApp.cachedProjects.length > 0) {
+      projects = window.HubApp.cachedProjects;
+    } else {
+      const selectEl = document.getElementById('projectSelect');
+      if (selectEl) {
+        Array.from(selectEl.options).forEach(opt => {
+          if (opt.value && opt.value !== '') {
+            projects.push({ name: opt.text || opt.value, id: opt.value });
           }
         });
-      });
-      uniqueRoles.forEach(r => {
-        options.push({ value: r, label: `${r}` });
-      });
-
-      if (options.length > 1) {
-        teamSelectEl.classList.remove('hidden');
-        const prevVal = teamSelectEl.value || 'all';
-        teamSelectEl.innerHTML = options.map(o => `<option value="${this.escapeHtml(o.value)}">${this.escapeHtml(o.label)}</option>`).join('');
-        teamSelectEl.value = options.some(o => o.value === prevVal) ? prevVal : 'all';
-      } else {
-        teamSelectEl.classList.add('hidden');
       }
     }
 
-    if (!members || members.length === 0) {
-      listEl.innerHTML = `
-        <div class="az-empty-dash-state">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <div style="font-weight:600; margin-top:6px;">No Members Discovered</div>
-          <div style="font-size:11px; color:var(--text-muted); margin-top:3px;">No team members or contributors found for ${this.escapeHtml(this.currentProject)}.</div>
-        </div>
-      `;
+    this.cachedProjects = projects;
+    this.renderProjectPickerItems(projects);
+  },
+
+  renderProjectPickerItems(projects) {
+    const listEl = document.getElementById('azDashProjectList');
+    if (!listEl) return;
+
+    if (!projects || projects.length === 0) {
+      listEl.innerHTML = '<div class="az-dash-project-empty">No authorized projects available for your account.</div>';
       return;
     }
 
-    const colors = ['#0078d4', '#107c10', '#7c3aed', '#0284c7', '#ea580c', '#d13438', '#008272', '#b45309'];
+    const self = this;
+    const isOrgAdmin = window.HubApp?.isOrgAdmin;
+    const scopeHeader = isOrgAdmin
+      ? `<div class="az-dash-project-scope-header admin-scope">👑 Organization Admin (${projects.length} Projects)</div>`
+      : `<div class="az-dash-project-scope-header user-scope">👤 Assigned Projects (${projects.length})</div>`;
 
-    const html = members.map((m, i) => {
-      const parts = (m.name || 'User').trim().split(/\s+/);
-      const initials = parts.length > 1 ? (parts[0][0] + parts[1][0]).toUpperCase() : (parts[0].substring(0, 2)).toUpperCase();
-      const bg = colors[i % colors.length];
-
-      const primaryTeam = m.teams && m.teams.length > 0 ? m.teams[0] : 'Project Member';
-      const allTeamsStr = (m.teams || []).join(', ');
-
-      const avatarHtml = m.imageUrl
-        ? `<img class="az-member-avatar-img" src="${m.imageUrl}" alt="${this.escapeHtml(m.name)}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" /><div class="az-member-avatar-fallback" style="background:${bg}; display:none;">${initials}</div>`
-        : `<div class="az-member-avatar-fallback" style="background:${bg};">${initials}</div>`;
-
-      const adminPill = m.isAdmin
-        ? `<span class="az-member-pill admin-pill" title="Administrator">Admin</span>`
-        : '';
-
-      const deliverablesPill = m.deliverables > 0
-        ? `<span class="az-member-pill stat-pill" title="${m.deliverables} work items assigned">${m.deliverables} item${m.deliverables > 1 ? 's' : ''}</span>`
-        : '';
-
-      const teamPill = `<span class="az-member-pill team-pill" title="Roles: ${this.escapeHtml(allTeamsStr)}">${this.escapeHtml(primaryTeam)}</span>`;
-
-      const mailAction = m.email
-        ? `<a href="mailto:${this.escapeHtml(m.email)}" class="az-member-action-btn" title="Send email to ${this.escapeHtml(m.name)}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-              <polyline points="22,6 12,13 2,6"></polyline>
-            </svg>
-          </a>`
-        : '';
-
+    listEl.innerHTML = scopeHeader + projects.map(p => {
+      const pName = typeof p === 'string' ? p : (p.name || p.id);
+      const isSelected = pName === self.currentProject;
       return `
-        <div class="az-member-card" data-teams="${this.escapeHtml(allTeamsStr)}" data-admin="${m.isAdmin}">
-          <div class="az-member-avatar-wrap">
-            ${avatarHtml}
-          </div>
-          <div class="az-member-info">
-            <div class="az-member-name-row">
-              <span class="az-member-name" title="${this.escapeHtml(m.name)}">${this.escapeHtml(m.name)}</span>
-              ${adminPill}
-              ${deliverablesPill}
-            </div>
-            <div class="az-member-email" title="${this.escapeHtml(m.email || 'No email registered')}">
-              ${this.escapeHtml(m.email || 'Direct Member')}
-            </div>
-            <div class="az-member-meta-row">
-              ${teamPill}
-            </div>
-          </div>
-          ${mailAction}
+        <div class="az-dash-project-item ${isSelected ? 'selected' : ''}" data-project="${self.escapeHtml(pName)}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7"></rect>
+            <rect x="14" y="3" width="7" height="7"></rect>
+            <rect x="14" y="14" width="7" height="7"></rect>
+            <rect x="3" y="14" width="7" height="7"></rect>
+          </svg>
+          <span style="flex:1;">${self.escapeHtml(pName)}</span>
+          ${isSelected ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0078d4" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>' : ''}
         </div>
       `;
     }).join('');
 
-    listEl.innerHTML = html;
-  },
+    listEl.querySelectorAll('.az-dash-project-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const proj = item.dataset.project;
+        if (!proj) return;
+        document.getElementById('azDashProjectMenu')?.classList.add('hidden');
 
-  bindMemberFilterEvents() {
-    if (this.eventsBound) return;
-    this.eventsBound = true;
-
-    const searchInput = document.getElementById('azTeamMemberSearch');
-    const teamSelect = document.getElementById('azTeamFilterSelect');
-
-    const applyFilter = () => {
-      const query = (searchInput?.value || '').toLowerCase().trim();
-      const teamVal = (teamSelect?.value || 'all').toLowerCase();
-      const cards = document.querySelectorAll('#azTeamMembersList .az-member-card');
-      let visibleCount = 0;
-
-      cards.forEach(card => {
-        const text = (card.innerText || '').toLowerCase();
-        const cardTeams = (card.dataset.teams || '').toLowerCase();
-        const isAdmin = card.dataset.admin === 'true';
-
-        const matchesQuery = !query || text.includes(query);
-        let matchesTeam = (teamVal === 'all') || cardTeams.includes(teamVal);
-        if (teamVal === 'admin' || teamVal.includes('admin')) {
-          matchesTeam = isAdmin || cardTeams.includes('admin');
+        // Sync with top bar select if present
+        const topSelect = document.getElementById('projectSelect');
+        if (topSelect) {
+          topSelect.value = proj;
         }
 
-        if (matchesQuery && matchesTeam) {
-          card.style.display = 'flex';
-          visibleCount++;
+        if (window.HubApp && typeof window.HubApp.handleProjectChange === 'function') {
+          window.HubApp.handleProjectChange(proj);
         } else {
-          card.style.display = 'none';
+          self.init(self.currentOrg, proj, self.currentPat);
         }
       });
-
-      const badgeEl = document.getElementById('azTeamTotalBadge');
-      if (badgeEl) {
-        if (query || teamVal !== 'all') {
-          badgeEl.textContent = `${visibleCount}/${this.allTeamMembers.length}`;
-        } else {
-          badgeEl.textContent = `${this.allTeamMembers.length}`;
-        }
-      }
-    };
-
-    searchInput?.addEventListener('input', applyFilter);
-    teamSelect?.addEventListener('change', applyFilter);
-
-    document.getElementById('btnViewProjectAccessLink')?.addEventListener('click', () => {
-      if (window.HubApp) {
-        window.HubApp.switchView('access');
-        window.HubApp.triggerActiveInspect();
-      }
     });
+  },
+
+  filterProjectPickerMenu(query) {
+    const q = (query || '').toLowerCase().trim();
+    const filtered = (this.cachedProjects || []).filter(p => {
+      const name = (typeof p === 'string' ? p : (p.name || p.id || '')).toLowerCase();
+      return name.includes(q);
+    });
+    this.renderProjectPickerItems(filtered);
   }
 };
