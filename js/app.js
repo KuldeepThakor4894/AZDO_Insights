@@ -363,6 +363,15 @@ window.HubApp = {
     document.getElementById('btnFetchWorkItems')?.addEventListener('click', () => self.execWorkItemsFetch());
     document.getElementById('btnFetchAgentPools')?.addEventListener('click', () => self.execAgentPoolsFetch());
     document.getElementById('btnFetchServiceConnections')?.addEventListener('click', () => self.execServiceConnectionsFetch());
+
+    // Pagination / "See More" Buttons
+    document.getElementById('btnMoreRepos')?.addEventListener('click', () => window.RepoModule.renderBranches(true));
+    document.getElementById('btnMorePrs')?.addEventListener('click', () => window.RepoModule.renderPrs(true));
+    document.getElementById('btnMoreAccess')?.addEventListener('click', () => window.AccessModule.render(true));
+    document.getElementById('btnMoreCommits')?.addEventListener('click', () => window.ActivityModule.renderCommits(true));
+    document.getElementById('btnMorePipelines')?.addEventListener('click', () => window.PipelinesModule.render(true));
+    document.getElementById('btnMoreWorkItems')?.addEventListener('click', () => window.WorkItemsModule.render(true));
+    document.getElementById('btnMoreAgentPools')?.addEventListener('click', () => window.AgentPoolsModule.render(true));
     document.getElementById('btnMoreServiceConnections')?.addEventListener('click', () => window.ServiceConnectionModule.render(true));
 
     // Quick Action Bar Buttons in Card Header
@@ -1127,8 +1136,16 @@ window.HubApp = {
       </tr>
     `);
 
-    document.getElementById('seeMoreRepoContainer')?.classList.add('hidden');
-    document.getElementById('seeMoreRepoPrsContainer')?.classList.add('hidden');
+    [
+      'seeMoreRepoContainer',
+      'seeMoreRepoPrsContainer',
+      'seeMoreAccessContainer',
+      'seeMoreCommitsContainer',
+      'seeMorePipelinesContainer',
+      'seeMoreWorkItemsContainer',
+      'seeMoreAgentPoolsContainer',
+      'seeMoreServiceConnectionsContainer'
+    ].forEach(id => document.getElementById(id)?.classList.add('hidden'));
   },
 
   switchView(viewKey, forceReload = false) {
