@@ -5,6 +5,48 @@ window.AgentPoolModule = {
   pageSize: 25,
   currentProject: '',
   currentOrg: '',
+  latestAgentVersion: '3.248.0',
+
+  compareVersions(v1, v2) {
+    if (!v1 && !v2) return 0;
+    if (!v1) return -1;
+    if (!v2) return 1;
+    const clean = v => String(v).trim().replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+    const p1 = clean(v1);
+    const p2 = clean(v2);
+    for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+      const num1 = p1[i] || 0;
+      const num2 = p2[i] || 0;
+      if (num1 > num2) return 1;
+      if (num1 < num2) return -1;
+    }
+    return 0;
+  },
+
+  async discoverLatestAgentVersion(org, auth) {
+    try {
+      const pkgUrl = `_apis/distributedtask/packages/agent?platform=win-x64&top=1&api-version=7.1-preview.1`;
+      const data = await window.HubApp.fetchAdo(org, pkgUrl, auth);
+      if (data?.value?.length > 0) {
+        const pkg = data.value[0];
+        let v = '';
+        if (typeof pkg.version === 'object' && pkg.version) {
+          v = `${pkg.version.major}.${pkg.version.minor}.${pkg.version.patch}`;
+        } else if (typeof pkg.version === 'string') {
+          v = pkg.version;
+        } else if (pkg.filename) {
+          const m = pkg.filename.match(/v?(\d+\.\d+\.\d+)/);
+          if (m) v = m[1];
+        }
+        if (v && this.compareVersions(v, this.latestAgentVersion) > 0) {
+          this.latestAgentVersion = v;
+        }
+      }
+    } catch (e) {
+      console.warn('[AgentPools] Packages API notice:', e.message);
+    }
+    return this.latestAgentVersion;
+  },
 
   async fetch(org, project, pat, filterType) {
     this.currentOrg = org;
@@ -14,6 +56,9 @@ window.AgentPoolModule = {
     const typeFilter = (filterType || 'all').toLowerCase();
 
     window.HubApp.setStatus(`Scanning agent queues and pools for project "${cleanProject}"...`, 'info');
+
+    // Discover latest available agent version across organization
+    await this.discoverLatestAgentVersion(org, auth);
 
     let allQueues = [];
 
@@ -62,6 +107,14 @@ window.AgentPoolModule = {
           const agentsUrl = `_apis/distributedtask/pools/${poolId}/agents?includeCapabilities=true&includeAssignedRequest=true&includeLastCompletedRequest=true&api-version=7.1-preview.1`;
           const agentData = await window.HubApp.fetchAdo(org, agentsUrl, auth);
           agents = agentData.value || [];
+
+          // Dynamically check highest agent version observed
+          agents.forEach(a => {
+            const v = a.version || a.systemCapabilities?.['Agent.Version'];
+            if (v && this.compareVersions(v, this.latestAgentVersion) > 0) {
+              this.latestAgentVersion = v;
+            }
+          });
         } catch (agErr) {
           console.warn(`Could not fetch agents for pool ${poolId}:`, agErr);
         }
@@ -78,6 +131,15 @@ window.AgentPoolModule = {
       const onlineCount = agents.filter(a => (a.status || '').toLowerCase() === 'online').length;
       const offlineCount = agents.filter(a => (a.status || '').toLowerCase() !== 'online').length;
       const totalAgents = isHosted ? (q.pool?.size || 1) : agents.length;
+
+      // Extract and analyze agent software versions
+      const agentVersions = agents.map(a => a.version || a.systemCapabilities?.['Agent.Version']).filter(Boolean);
+      agentVersions.sort((a, b) => this.compareVersions(b, a));
+      const recentVersion = agentVersions.length > 0 ? agentVersions[0] : null;
+      const hasUpdateAvailable = !isHosted && agents.some(a => {
+        const v = a.version || a.systemCapabilities?.['Agent.Version'];
+        return v && this.compareVersions(v, this.latestAgentVersion) < 0;
+      });
 
       let status = 'Healthy';
       if (isHosted) {
@@ -106,6 +168,8 @@ window.AgentPoolModule = {
         offlineAgentsCount: isHosted ? 0 : offlineCount,
         status: status,
         rawQueue: q,
+        recentVersion: isHosted ? 'Cloud Managed' : recentVersion,
+        hasUpdateAvailable: hasUpdateAvailable,
         url: `https://dev.azure.com/${org}/${encodeURIComponent(cleanProject)}/_settings/agentqueues?queueId=${q.id}`
       };
     }));
@@ -127,6 +191,7 @@ window.AgentPoolModule = {
     const selfHostedCount = this.pools.filter(p => !p.isHosted).length;
     const totalOnlineAgents = this.pools.reduce((acc, p) => acc + (p.isHosted ? 0 : p.onlineAgentsCount), 0);
     const totalOfflineAgents = this.pools.reduce((acc, p) => acc + (p.isHosted ? 0 : p.offlineAgentsCount), 0);
+    const poolsWithUpdates = this.pools.filter(p => p.hasUpdateAvailable).length;
 
     window.HubApp.setKpis(
       cleanProject,
@@ -134,8 +199,8 @@ window.AgentPoolModule = {
       totalPools,
       'Self-Hosted Online',
       totalOnlineAgents,
-      'Hosted / Private',
-      `${hostedCount} / ${selfHostedCount}`
+      'Updates Available',
+      poolsWithUpdates > 0 ? `${poolsWithUpdates} Pool${poolsWithUpdates > 1 ? 's' : ''}` : 'All Up to Date'
     );
 
     this.render(false);
@@ -196,13 +261,54 @@ window.AgentPoolModule = {
     return `<span class="badge badge-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>Self-Hosted</span>`;
   },
 
+  getVersionBadge(pool) {
+    if (pool.isHosted) {
+      return `
+        <div style="display:flex; align-items:center; gap:6px;">
+          <code>Cloud (v3.x)</code>
+          <span class="badge badge-succeeded" style="font-size:10.5px; padding:2px 6px;">Managed</span>
+        </div>
+      `;
+    }
+
+    if (!pool.agents || pool.agents.length === 0) {
+      return `<span class="text-muted" style="font-size:12px; font-style:italic;">No agents configured</span>`;
+    }
+
+    const recent = pool.recentVersion || 'unknown';
+    if (pool.hasUpdateAvailable) {
+      return `
+        <div style="display:flex; flex-direction:column; gap:2px;">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <code>v${recent}</code>
+            <span class="badge badge-warning" style="font-size:10.5px; padding:2px 7px; font-weight:600;" title="Latest available version: v${this.latestAgentVersion}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:10px; height:10px; margin-right:3px; vertical-align:-1px;"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              Update Available
+            </span>
+          </div>
+          ${pool.agents.length > 1 ? `<span style="font-size:11px; color:var(--text-muted);">${pool.agents.length} agents (${recent})</span>` : ''}
+        </div>
+      `;
+    }
+
+    return `
+      <div style="display:flex; align-items:center; gap:6px;">
+        <code>v${recent}</code>
+        <span class="badge badge-succeeded" style="font-size:10.5px; padding:2px 6px; font-weight:600;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:10px; height:10px; margin-right:2px; vertical-align:-1px;"><polyline points="20 6 9 17 4 12"/></svg>
+          Up to Date
+        </span>
+      </div>
+    `;
+  },
+
   render(append = false) {
     const tbody = document.getElementById('agentPoolsTableBody');
     if (!tbody) return;
     if (!append) tbody.innerHTML = '';
 
     if (this.pools.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-slate-400">No agent pools or queues found for this project.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="7" class="p-4 text-center text-slate-400">No agent pools or queues found for this project.</td></tr>`;
       document.getElementById('seeMoreAgentPoolsContainer')?.classList.add('hidden');
       return;
     }
@@ -213,6 +319,7 @@ window.AgentPoolModule = {
       const globalIdx = this.index + localIdx;
       const statusBadge = this.getStatusBadge(pool);
       const typeBadge = this.getTypeBadge(pool);
+      const versionBadge = this.getVersionBadge(pool);
 
       const agentCountText = pool.isHosted ? 'Elastic Cloud' : `${pool.onlineAgentsCount} / ${pool.size} Online`;
 
@@ -222,6 +329,7 @@ window.AgentPoolModule = {
         <td><strong>${pool.name}</strong></td>
         <td>${typeBadge}</td>
         <td><code>${agentCountText}</code></td>
+        <td>${versionBadge}</td>
         <td>${statusBadge}</td>
         <td>${pool.autoProvision ? '<span class="badge badge-active">Auto-Provisioned</span>' : '<span class="badge badge-canceled">Manual</span>'}</td>
         <td><code>#${pool.poolId}</code></td>
@@ -275,6 +383,14 @@ window.AgentPoolModule = {
               <div class="blade-kv-item">
                 <span class="blade-kv-label">POOL TYPE</span>
                 <span class="blade-kv-value">${this.getTypeBadge(pool)}</span>
+              </div>
+              <div class="blade-kv-item">
+                <span class="blade-kv-label">AGENT RECENT VERSION</span>
+                <span class="blade-kv-value">${this.getVersionBadge(pool)}</span>
+              </div>
+              <div class="blade-kv-item">
+                <span class="blade-kv-label">LATEST AGENT RELEASE</span>
+                <span class="blade-kv-value"><code>v${this.latestAgentVersion}</code></span>
               </div>
               <div class="blade-kv-item">
                 <span class="blade-kv-label">HEALTH / STATUS</span>
@@ -347,12 +463,25 @@ window.AgentPoolModule = {
               ? `<span class="badge badge-inprogress">Running Job #${ag.assignedRequest.jobId || ''} (${ag.assignedRequest.planType || 'Build'})</span>`
               : `<span class="badge badge-canceled">Idle</span>`;
 
+            const agVersion = ag.version || ag.systemCapabilities?.['Agent.Version'] || 'unknown';
+            const hasUpdate = agVersion !== 'unknown' && this.compareVersions(agVersion, this.latestAgentVersion) < 0;
+            const versionBadge = hasUpdate
+              ? `<span class="badge badge-warning" style="font-size:11px; padding:2px 8px; font-weight:600; margin-left:6px;" title="Latest available version: v${this.latestAgentVersion}">
+                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:10px; height:10px; margin-right:3px; vertical-align:-1px;"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                   Update Available (Latest: v${this.latestAgentVersion})
+                 </span>`
+              : `<span class="badge badge-succeeded" style="font-size:11px; padding:2px 8px; font-weight:600; margin-left:6px;">
+                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:10px; height:10px; margin-right:2px; vertical-align:-1px;"><polyline points="20 6 9 17 4 12"/></svg>
+                   Up to Date
+                 </span>`;
+
             return `
               <div class="data-card" style="margin-bottom:12px; padding:12px 14px; background:var(--azure-surface-alt); border:1px solid var(--azure-border);">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                  <div style="display:flex; align-items:center; gap:8px;">
+                  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                     <strong style="font-size:13.5px; color:var(--text-main);">${ag.name}</strong>
-                    <code>v${ag.version || 'unknown'}</code>
+                    <code>v${agVersion}</code>
+                    ${versionBadge}
                   </div>
                   <div style="display:flex; gap:6px;">
                     ${statusBadge}
@@ -425,3 +554,5 @@ window.AgentPoolModule = {
     });
   }
 };
+
+window.AgentPoolsModule = window.AgentPoolModule;

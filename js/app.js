@@ -1120,7 +1120,7 @@ window.HubApp = {
 
     setHtml('agentPoolsTableBody', `
       <tr>
-        <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+        <td colspan="7" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect></svg>
           Select a pool type and click <strong>"Trigger / Scan Agent Pools"</strong> button above to load agent pools & queues.
         </td>
