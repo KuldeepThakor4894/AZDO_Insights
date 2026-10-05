@@ -1037,7 +1037,7 @@ window.DashboardModule = {
     // Jump to PRs view button
     document.getElementById('btnDashJumpToPrs')?.addEventListener('click', () => {
       if (window.HubApp && typeof window.HubApp.switchView === 'function') {
-        window.HubApp.switchView('repositories');
+        window.HubApp.switchView('prs');
         window.HubApp.triggerActiveInspect();
       }
     });
