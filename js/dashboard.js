@@ -1023,7 +1023,6 @@ window.DashboardModule = {
     document.getElementById('kpiCardReposPrs')?.addEventListener('click', () => {
       if (window.HubApp && typeof window.HubApp.switchView === 'function') {
         window.HubApp.switchView('repositories');
-        window.HubApp.triggerActiveInspect();
       }
     });
 
@@ -1037,6 +1036,8 @@ window.DashboardModule = {
     // Jump to PRs view button
     document.getElementById('btnDashJumpToPrs')?.addEventListener('click', () => {
       if (window.HubApp && typeof window.HubApp.switchView === 'function') {
+        const repoSelect = document.getElementById('repoSelect');
+        if (repoSelect) repoSelect.value = '-- All Repositories --';
         window.HubApp.switchView('prs');
         window.HubApp.triggerActiveInspect();
       }

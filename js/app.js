@@ -1014,7 +1014,8 @@ window.HubApp = {
 
       const repoDropdown = document.getElementById('repoSelect');
       if (repoDropdown) {
-        repoDropdown.innerHTML = '<option value="-- All Repositories --">-- All Repositories --</option>' +
+        repoDropdown.innerHTML = '<option value="">-- Choose Repository --</option>' +
+          '<option value="-- All Repositories --">-- All Repositories --</option>' +
           this.cachedRepos.map(r => `<option value="${r.name}">${r.name}</option>`).join('');
       }
     } catch (err) {
@@ -1029,6 +1030,9 @@ window.HubApp = {
   },
 
   resetTablePlaceholders() {
+    const repoDropdown = document.getElementById('repoSelect');
+    if (repoDropdown) repoDropdown.value = '';
+
     const setHtml = (id, html) => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = html;
@@ -1122,6 +1126,9 @@ window.HubApp = {
         </td>
       </tr>
     `);
+
+    document.getElementById('seeMoreRepoContainer')?.classList.add('hidden');
+    document.getElementById('seeMoreRepoPrsContainer')?.classList.add('hidden');
   },
 
   switchView(viewKey, forceReload = false) {
@@ -1251,14 +1258,21 @@ window.HubApp = {
   async execRepoInspect() {
     const project = this.validateProjectSelection();
     if (!project) return;
+
+    const repoInput = document.getElementById('repoSelect')?.value;
+    if (!repoInput) {
+      return this.showModal('Please select a Repository from the Repository Scope dropdown before clicking Trigger.');
+    }
+
     try {
       this.setStatus('Inspecting repository branches and branch policies...', 'info');
       await window.RepoModule.inspect(
         this.getOrg(),
         project,
         this.getPat(),
-        document.getElementById('repoSelect')?.value || '-- All Repositories --',
-        this.cachedRepos
+        repoInput,
+        this.cachedRepos,
+        this.currentView
       );
       this.setStatus('Repository matrix & branch policies loaded.', 'success');
     } catch (e) { this.setStatus(e.message, 'error'); }

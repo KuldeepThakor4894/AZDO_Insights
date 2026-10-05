@@ -69,7 +69,7 @@ window.RepoModule = {
     });
   },
 
-  async inspect(org, project, pat, targetRepoInput, cachedRepos) {
+  async inspect(org, project, pat, targetRepoInput, cachedRepos, targetView = null) {
     this.currentOrg = org;
     this.currentProject = project;
     let targetRepos = cachedRepos;
@@ -202,9 +202,15 @@ window.RepoModule = {
       totalProtectedBranches
     );
 
-    this.renderBranches(false);
-    this.renderPolicies();
-    this.renderPrs(false);
+    if (!targetView || targetView === 'repositories') {
+      this.renderBranches(false);
+    }
+    if (!targetView || targetView === 'policies') {
+      this.renderPolicies();
+    }
+    if (!targetView || targetView === 'prs') {
+      this.renderPrs(false);
+    }
 
     window.HubApp.renderChart(Object.keys(counts), Object.values(counts), 'Active Branches per Repository');
   },
