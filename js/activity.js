@@ -223,7 +223,6 @@ window.ActivityModule = {
     this.prIndex = 0;
 
     // Update KPIs
-    const timeframeDays = document.getElementById('userTimeframeDays')?.value || '90';
     window.HubApp.setKpis(
       this.currentQuery || project,
       'Commits Found',
@@ -231,9 +230,7 @@ window.ActivityModule = {
       'Pull Requests',
       this.prs.length,
       'Active Repos',
-      activeReposSet.size,
-      'Timeframe',
-      `Last ${timeframeDays}d`
+      activeReposSet.size
     );
 
     this.renderCommits(false);

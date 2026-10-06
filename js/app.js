@@ -351,8 +351,8 @@ window.HubApp = {
           self.switchView(view);
           if (view === 'dashboard') {
             self.execDashboardFetch();
-          } else {
-            self.handleFunctionMenuSelect(view);
+          } else if (view === 'repositories') {
+            self.handleRepoMenuSelect();
           }
         }
       });
@@ -648,62 +648,25 @@ window.HubApp = {
     bar.classList.remove('hidden');
   },
 
-  setKpis(scope, l2, v2, l3, v3, l4, v4, l5 = '', v5 = '') {
-    const container = document.getElementById('kpiContainer');
-    if (container) {
-      if (this.currentView === 'dashboard') {
-        container.classList.add('hidden');
-      } else {
-        container.classList.remove('hidden');
-      }
-    }
-
-    const k1l = document.getElementById('kpi-1-label');
-    const k1v = document.getElementById('kpi-1-val');
+  setKpis(scope, l2, v2, l3, v3, l4, v4) {
+    const k1 = document.getElementById('kpi-1-val');
     const k2l = document.getElementById('kpi-2-label');
     const k2v = document.getElementById('kpi-2-val');
     const k3l = document.getElementById('kpi-3-label');
     const k3v = document.getElementById('kpi-3-val');
     const k4l = document.getElementById('kpi-4-label');
     const k4v = document.getElementById('kpi-4-val');
-    const k5l = document.getElementById('kpi-5-label');
-    const k5v = document.getElementById('kpi-5-val');
 
-    let firstLabel = 'PROJECT SCOPE';
-    if (this.currentView === 'repositories' || this.currentView === 'policies' || this.currentView === 'prs') {
-      firstLabel = 'REPOSITORY';
-    } else if (this.currentView === 'activity') {
-      firstLabel = 'USER / SCOPE';
-    } else if (this.currentView === 'agentpools') {
-      firstLabel = 'ORGANIZATION';
-    }
-
-    if (k1l) k1l.textContent = firstLabel;
-    if (k1v) k1v.textContent = scope || '-';
-
-    if (k2l) k2l.textContent = (l2 || 'PRIMARY METRIC').toUpperCase();
-    if (k2v) k2v.textContent = v2 !== undefined ? v2 : '-';
-
-    if (k3l) k3l.textContent = (l3 || 'SECONDARY METRIC').toUpperCase();
-    if (k3v) k3v.textContent = v3 !== undefined ? v3 : '-';
-
-    if (k4l) k4l.textContent = (l4 || 'ACTIVE METRIC').toUpperCase();
-    if (k4v) k4v.textContent = v4 !== undefined ? v4 : '-';
-
-    if (k5l) k5l.textContent = (l5 || 'COMPLETED').toUpperCase();
-    if (k5v) k5v.textContent = v5 !== undefined ? v5 : '-';
+    if (k1) k1.textContent = scope;
+    if (k2l) k2l.textContent = l2;
+    if (k2v) k2v.textContent = v2;
+    if (k3l) k3l.textContent = l3;
+    if (k3v) k3v.textContent = v3;
+    if (k4l) k4l.textContent = l4;
+    if (k4v) k4v.textContent = v4;
   },
 
   setRepoKpis(repoName, totalBranches, staleBranches, totalPrs, activePrs, completedPrs) {
-    const container = document.getElementById('kpiContainer');
-    if (container) {
-      if (this.currentView === 'dashboard') {
-        container.classList.add('hidden');
-      } else {
-        container.classList.remove('hidden');
-      }
-    }
-
     const k1l = document.getElementById('kpi-1-label');
     const k1v = document.getElementById('kpi-1-val');
     const k2l = document.getElementById('kpi-2-label');
@@ -716,7 +679,7 @@ window.HubApp = {
     const k5v = document.getElementById('kpi-5-val');
 
     if (k1l) k1l.textContent = 'REPOSITORY';
-    if (k1v) k1v.textContent = repoName || 'All Repositories';
+    if (k1v) k1v.textContent = repoName || '-';
 
     if (k2l) k2l.textContent = 'BRANCHES';
     if (k2v) k2v.textContent = `${totalBranches} (${staleBranches} Stale)`;
@@ -1421,14 +1384,8 @@ window.HubApp = {
       document.getElementById(id)?.classList.toggle('hidden', id !== `view-${viewKey}`);
     });
 
-    // Toggle KPI summary strip (hidden on dashboard overview, visible on function menus)
-    const kpiStrip = document.getElementById('kpiContainer');
-    if (kpiStrip) {
-      kpiStrip.classList.toggle('hidden', viewKey === 'dashboard');
-    }
-
-    // Refresh KPI strip for repository views if repo data is present
-    if (viewKey === 'repositories' || viewKey === 'policies' || viewKey === 'prs') {
+    // Refresh KPI strip specifically for Repositories & Branches if repo data is present
+    if (viewKey === 'repositories') {
       if (window.RepoModule && typeof window.RepoModule.updateKpis === 'function') {
         window.RepoModule.updateKpis();
       }
@@ -1440,63 +1397,23 @@ window.HubApp = {
     }
   },
 
-  handleFunctionMenuSelect(view) {
+  handleRepoMenuSelect() {
     const project = document.getElementById('projectSelect')?.value;
     if (!project) return;
 
-    if (view === 'repositories' || view === 'policies' || view === 'prs') {
+    if (window.RepoModule && window.RepoModule.branches && window.RepoModule.branches.length > 0) {
+      window.RepoModule.updateKpis();
+      window.RepoModule.renderBranches(false);
+    } else {
       const repoDropdown = document.getElementById('repoSelect');
-      if (window.RepoModule && window.RepoModule.branches && window.RepoModule.branches.length > 0) {
-        window.RepoModule.updateKpis();
-        if (view === 'repositories') window.RepoModule.renderBranches(false);
-        if (view === 'policies') window.RepoModule.renderPolicies();
-        if (view === 'prs') window.RepoModule.renderPrs(false);
-      } else if (repoDropdown) {
-        if (!repoDropdown.value) {
-          if (this.cachedRepos && this.cachedRepos.length > 0) {
-            repoDropdown.value = this.cachedRepos[0].name;
-          } else {
-            repoDropdown.value = '-- All Repositories --';
-          }
+      if (repoDropdown && !repoDropdown.value) {
+        if (this.cachedRepos && this.cachedRepos.length > 0) {
+          repoDropdown.value = this.cachedRepos[0].name;
+        } else {
+          repoDropdown.value = '-- All Repositories --';
         }
-        this.execRepoInspect();
       }
-    } else if (view === 'pipelines') {
-      if (window.PipelinesModule && window.PipelinesModule.runs && window.PipelinesModule.runs.length > 0) {
-        // Already loaded
-      } else {
-        this.execPipelineFetch();
-      }
-    } else if (view === 'access') {
-      if (window.AccessModule && window.AccessModule.items && window.AccessModule.items.length > 0) {
-        // Already loaded
-      } else {
-        this.execAccessFetch();
-      }
-    } else if (view === 'workitems') {
-      if (window.WorkItemsModule && window.WorkItemsModule.items && window.WorkItemsModule.items.length > 0) {
-        // Already loaded
-      } else {
-        this.execWorkItemsFetch();
-      }
-    } else if (view === 'agentpools') {
-      if (window.AgentPoolsModule && window.AgentPoolsModule.pools && window.AgentPoolsModule.pools.length > 0) {
-        // Already loaded
-      } else {
-        this.execAgentPoolsFetch();
-      }
-    } else if (view === 'serviceconnections') {
-      if (window.ServiceConnectionModule && window.ServiceConnectionModule.endpoints && window.ServiceConnectionModule.endpoints.length > 0) {
-        // Already loaded
-      } else {
-        this.execServiceConnectionsFetch();
-      }
-    } else if (view === 'activity') {
-      if (window.ActivityModule && window.ActivityModule.commits && window.ActivityModule.commits.length > 0) {
-        // Already loaded
-      } else {
-        this.execActivityFetch();
-      }
+      this.execRepoInspect();
     }
   },
 
