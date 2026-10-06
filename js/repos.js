@@ -74,7 +74,10 @@ window.RepoModule = {
     this.currentProject = project;
     let targetRepos = cachedRepos;
     if (targetRepoInput !== '-- All Repositories --' && targetRepoInput) {
-      targetRepos = cachedRepos.filter(r => r.name.toLowerCase().includes(targetRepoInput.toLowerCase()));
+      targetRepos = cachedRepos.filter(r => r.name.toLowerCase() === targetRepoInput.toLowerCase());
+      if (!targetRepos.length) {
+        targetRepos = cachedRepos.filter(r => r.name.trim().toLowerCase() === targetRepoInput.trim().toLowerCase() || r.id === targetRepoInput);
+      }
     }
     if (!targetRepos.length) throw new Error(`No repository matching "${targetRepoInput}"`);
 
