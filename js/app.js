@@ -334,7 +334,7 @@ window.HubApp = {
     document.getElementById('btnStartWizard')?.addEventListener('click', () => self.goToScreen(2));
     document.getElementById('btnBackToStep1')?.addEventListener('click', () => self.goToScreen(1));
     document.getElementById('btnSwitchOrg')?.addEventListener('click', () => self.goToScreen(2));
-    document.getElementById('btnLogout')?.addEventListener('click', () => self.goToScreen(2));
+    document.getElementById('btnLogout')?.addEventListener('click', () => self.logout());
     document.getElementById('btnLogoHome')?.addEventListener('click', () => self.goToScreen(1));
 
     document.getElementById('targetOrg')?.addEventListener('input', () => self.updateOrgPath());
@@ -486,6 +486,43 @@ window.HubApp = {
     document.getElementById('suiteEnvBadge')?.classList.toggle('hidden', !isStep3);
 
     window.BladeController.closeBlade();
+  },
+
+  logout() {
+    this.isOrgAdmin = false;
+    this.currentUser = null;
+    this.cachedProjects = [];
+
+    if (window.DashboardModule?.reset) {
+      window.DashboardModule.reset();
+    }
+
+    const select = document.getElementById('projectSelect');
+    if (select) {
+      select.innerHTML = '<option value="">-- Choose Project --</option>';
+      select.disabled = false;
+    }
+
+    const connText = document.getElementById('suiteConnectionText');
+    if (connText) {
+      connText.textContent = 'Not Connected';
+    }
+    const orgCrumb = document.getElementById('suiteBreadcrumbOrg');
+    if (orgCrumb) {
+      orgCrumb.textContent = 'dev.azure.com';
+    }
+    const orgCode = document.getElementById('portalOrgCode');
+    if (orgCode) {
+      orgCode.textContent = 'dev.azure.com';
+    }
+
+    const statusBar = document.getElementById('statusBar');
+    if (statusBar) {
+      statusBar.classList.add('hidden');
+    }
+
+    // Redirect to main home page (Azure DevOps Intelligence Hub landing page - Screen 1)
+    this.goToScreen(1);
   },
 
   getOrg() {
