@@ -191,15 +191,23 @@ window.RepoModule = {
     // Sort: Protected branches first, then alphabetical
     this.branches.sort((a, b) => (b.hasPolicy ? 1 : 0) - (a.hasPolicy ? 1 : 0) || a.branch.localeCompare(b.branch));
     const totalProtectedBranches = this.branches.filter(b => b.hasPolicy).length;
+    const staleBranchesCount = this.branches.filter(b => b.isStale).length;
+    const activePrsCount = this.prs.filter(p => p.status === 'active').length;
+    const completedPrsCount = this.prs.filter(p => p.status === 'completed').length;
+    const repoLabel = targetRepos.length === 1 ? targetRepos[0].name : (selectedRepo && selectedRepo !== '-- All Repositories --' ? selectedRepo : `${project} (${targetRepos.length} Repos)`);
 
-    window.HubApp.setKpis(
-      targetRepos.length === 1 ? targetRepos[0].name : `${project} (${targetRepos.length} Repos)`,
-      'Repositories',
-      targetRepos.length,
-      'Total Branches',
+    this.currentRepoLabel = repoLabel;
+    this.staleBranchesCount = staleBranchesCount;
+    this.activePrsCount = activePrsCount;
+    this.completedPrsCount = completedPrsCount;
+
+    window.HubApp.setRepoKpis(
+      repoLabel,
       this.branches.length,
-      'Protected Branches',
-      totalProtectedBranches
+      staleBranchesCount,
+      this.prs.length,
+      activePrsCount,
+      completedPrsCount
     );
 
     if (!targetView || targetView === 'repositories') {
@@ -213,6 +221,23 @@ window.RepoModule = {
     }
 
     window.HubApp.renderChart(Object.keys(counts), Object.values(counts), 'Active Branches per Repository');
+  },
+
+  updateKpis() {
+    if (!this.branches || this.branches.length === 0) return;
+    const staleBranchesCount = this.staleBranchesCount !== undefined ? this.staleBranchesCount : this.branches.filter(b => b.isStale).length;
+    const activePrsCount = this.activePrsCount !== undefined ? this.activePrsCount : (this.prs || []).filter(p => p.status === 'active').length;
+    const completedPrsCount = this.completedPrsCount !== undefined ? this.completedPrsCount : (this.prs || []).filter(p => p.status === 'completed').length;
+    const repoLabel = this.currentRepoLabel || (document.getElementById('repoSelect')?.value) || 'Repositories';
+
+    window.HubApp.setRepoKpis(
+      repoLabel,
+      this.branches.length,
+      staleBranchesCount,
+      (this.prs || []).length,
+      activePrsCount,
+      completedPrsCount
+    );
   },
 
   renderBranches(append = false) {

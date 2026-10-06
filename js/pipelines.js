@@ -509,6 +509,7 @@ window.PipelineModule = {
 
     // 5. Update KPI cards
     const buildsPassed = processedRuns.filter(r => r.buildResult === 'succeeded').length;
+    const buildsFailed = processedRuns.filter(r => r.buildResult === 'failed').length;
     const fullyDeployed = processedRuns.filter(r => r.overallCicdState === 'deployed').length;
 
     window.HubApp.setKpis(
@@ -517,6 +518,8 @@ window.PipelineModule = {
       processedRuns.length,
       'Builds Passed',
       buildsPassed,
+      'Failed Runs',
+      buildsFailed,
       'Deployment Completed',
       fullyDeployed
     );

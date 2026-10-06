@@ -1208,6 +1208,103 @@ body.theme-dark .feature-item {
 }
 
 /* ==========================================================================
+   PORTAL KPI SUMMARY STRIP (5 Dynamic Analytics Tiles)
+   ========================================================================== */
+
+.portal-kpi-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px 20px;
+  background: var(--azure-bg);
+  border-bottom: 1px solid var(--azure-border);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.portal-kpi-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 12px;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  min-height: 80px;
+  box-sizing: border-box;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.theme-dark .portal-kpi-card {
+  background: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.portal-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+.portal-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.portal-kpi-val {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.kpi-val-blue {
+  color: #1a56db !important;
+}
+
+.kpi-val-purple {
+  color: #7e22ce !important;
+}
+
+.kpi-val-teal {
+  color: #0284c7 !important;
+}
+
+.kpi-val-orange {
+  color: #ea580c !important;
+}
+
+.kpi-val-green {
+  color: #16a34a !important;
+}
+
+@media (max-width: 1200px) {
+  .portal-kpi-summary-strip {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .portal-kpi-summary-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ==========================================================================
    TABLES & DATA VIEWS
    ========================================================================== */
 

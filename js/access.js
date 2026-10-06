@@ -195,12 +195,16 @@ window.AccessModule = {
     this.index = 0;
 
     // Update KPI cards
+    const uniqueUsersCount = new Set(this.items.map(i => i.email || i.user).filter(Boolean)).size;
+
     window.HubApp.setKpis(
       userQuery ? `Filtered: "${userQuery}"` : `${project} (All Groups)`,
       'Security Groups',
       Object.keys(groupMemberCounts).length,
       'Active Permissions',
       this.items.length,
+      'Unique Members',
+      uniqueUsersCount || this.items.length,
       'Security Mode',
       'Graph Security'
     );

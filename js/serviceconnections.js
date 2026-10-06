@@ -116,8 +116,10 @@ window.ServiceConnectionModule = {
       totalCount,
       'Verified / Ready',
       readyCount,
-      'Azure / 3rd-Party',
-      `${azureCount} / ${thirdPartyCount}`
+      'Azure Cloud ARM',
+      azureCount,
+      '3rd-Party Endpoints',
+      thirdPartyCount
     );
 
     this.render(false);

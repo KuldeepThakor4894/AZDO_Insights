@@ -114,14 +114,26 @@ window.WorkItemModule = {
     this.index = 0;
 
     // Update KPIs
+    const activeCount = this.items.filter(i => {
+      const s = (i.state || '').toLowerCase();
+      return s === 'active' || s === 'in progress' || s === 'doing' || s === 'new' || s === 'to do';
+    }).length;
+    const bugCount = this.items.filter(i => (i.type || '').toLowerCase().includes('bug')).length;
+    const closedCount = this.items.filter(i => {
+      const s = (i.state || '').toLowerCase();
+      return s === 'closed' || s === 'done' || s === 'resolved';
+    }).length;
+
     window.HubApp.setKpis(
       cleanUserQuery || cleanProject,
       'Total Work Items',
       this.items.length,
-      'Item Types',
-      Object.keys(typeCounts).length,
-      'Query Engine',
-      'WIQL Scope'
+      'Active / In-Dev',
+      activeCount,
+      'Active Bugs',
+      bugCount,
+      'Resolved / Closed',
+      closedCount
     );
 
     this.render(false);

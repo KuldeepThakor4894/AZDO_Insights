@@ -197,10 +197,12 @@ window.AgentPoolModule = {
       cleanProject,
       'Total Agent Pools',
       totalPools,
-      'Self-Hosted Online',
+      'Online Compute',
       totalOnlineAgents,
-      'Updates Available',
-      poolsWithUpdates > 0 ? `${poolsWithUpdates} Pool${poolsWithUpdates > 1 ? 's' : ''}` : 'All Up to Date'
+      'Offline Compute',
+      totalOfflineAgents,
+      'Pool Updates',
+      poolsWithUpdates > 0 ? `${poolsWithUpdates} Available` : 'Up to Date'
     );
 
     this.render(false);
