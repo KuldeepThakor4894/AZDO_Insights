@@ -478,6 +478,21 @@ window.HubApp = {
       this.currentUser = null;
       this.cachedProjects = [];
       document.getElementById('kpiContainer')?.classList.add('hidden');
+
+      const projCrumb = document.getElementById('suiteBreadcrumbProject');
+      if (projCrumb) projCrumb.textContent = 'Overview';
+
+      const orgCrumb = document.getElementById('suiteBreadcrumbOrg');
+      if (orgCrumb) orgCrumb.textContent = 'dev.azure.com';
+
+      const activeLabel = document.getElementById('activeProjectLabel');
+      if (activeLabel) activeLabel.textContent = 'Select Project';
+
+      const teamNameEl = document.getElementById('azDashTeamName');
+      if (teamNameEl) teamNameEl.textContent = 'Select a Project';
+
+      const activePath = document.getElementById('portalActivePath');
+      if (activePath) activePath.textContent = '/dev.azure.com/overview';
     }
 
     const isStep3 = stepNumber === 3;
@@ -513,15 +528,34 @@ window.HubApp = {
     if (orgCrumb) {
       orgCrumb.textContent = 'dev.azure.com';
     }
+    const projCrumb = document.getElementById('suiteBreadcrumbProject');
+    if (projCrumb) {
+      projCrumb.textContent = 'Overview';
+    }
+    const activeLabel = document.getElementById('activeProjectLabel');
+    if (activeLabel) {
+      activeLabel.textContent = 'Select Project';
+    }
+    const teamNameEl = document.getElementById('azDashTeamName');
+    if (teamNameEl) {
+      teamNameEl.textContent = 'Select a Project';
+    }
     const orgCode = document.getElementById('portalOrgCode');
     if (orgCode) {
       orgCode.textContent = 'dev.azure.com';
+    }
+    const activePath = document.getElementById('portalActivePath');
+    if (activePath) {
+      activePath.textContent = '/dev.azure.com/overview';
     }
 
     const statusBar = document.getElementById('statusBar');
     if (statusBar) {
       statusBar.classList.add('hidden');
     }
+
+    // Reset data and tables
+    this.resetDataAndTables();
 
     // Clear connect screen credentials so future login is clean
     this.clearAuthInputs();
@@ -556,9 +590,25 @@ window.HubApp = {
     if (orgCrumb) {
       orgCrumb.textContent = 'dev.azure.com';
     }
+    const projCrumb = document.getElementById('suiteBreadcrumbProject');
+    if (projCrumb) {
+      projCrumb.textContent = 'Overview';
+    }
+    const activeLabel = document.getElementById('activeProjectLabel');
+    if (activeLabel) {
+      activeLabel.textContent = 'Select Project';
+    }
+    const teamNameEl = document.getElementById('azDashTeamName');
+    if (teamNameEl) {
+      teamNameEl.textContent = 'Select a Project';
+    }
     const orgCode = document.getElementById('portalOrgCode');
     if (orgCode) {
       orgCode.textContent = 'dev.azure.com';
+    }
+    const activePath = document.getElementById('portalActivePath');
+    if (activePath) {
+      activePath.textContent = '/dev.azure.com/overview';
     }
 
     // Hide status bar
@@ -566,6 +616,9 @@ window.HubApp = {
     if (statusBar) {
       statusBar.classList.add('hidden');
     }
+
+    // Reset data and tables
+    this.resetDataAndTables();
 
     // Clear all credentials and form inputs on Connect to Azure DevOps Service page (Screen 2)
     this.clearAuthInputs();
@@ -1327,6 +1380,23 @@ window.HubApp = {
       const el = document.getElementById(id);
       if (el) el.textContent = '-';
     });
+
+    const projCrumb = document.getElementById('suiteBreadcrumbProject');
+    if (projCrumb) {
+      projCrumb.textContent = 'Overview';
+    }
+    const orgCrumb = document.getElementById('suiteBreadcrumbOrg');
+    if (orgCrumb) {
+      orgCrumb.textContent = 'dev.azure.com';
+    }
+    const activeLabel = document.getElementById('activeProjectLabel');
+    if (activeLabel) {
+      activeLabel.textContent = 'Select Project';
+    }
+    const teamNameEl = document.getElementById('azDashTeamName');
+    if (teamNameEl) {
+      teamNameEl.textContent = 'Select a Project';
+    }
   },
 
   switchView(viewKey, forceReload = false) {
