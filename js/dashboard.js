@@ -664,47 +664,12 @@ window.DashboardModule = {
     }
   },
 
-  // Render Conditional Critical Alerts Banner
+  // Render Conditional Critical Alerts Banner (Disabled)
   renderCriticalAlertsBanner(alerts) {
     const banner = document.getElementById('azDashCriticalAlertsBanner');
-    const list = document.getElementById('azDashCriticalAlertsList');
-    if (!banner || !list) return;
-
-    const badges = [];
-
-    if (alerts.p1BugsCount > 0) {
-      badges.push(`
-        <span class="az-alert-pill" title="High-priority bugs awaiting resolution">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-          ${alerts.p1BugsCount} Critical Bug${alerts.p1BugsCount > 1 ? 's' : ''} (Severity 1 / P1)
-        </span>
-      `);
-    }
-
-    if (alerts.offlineAgentsCount > 0) {
-      badges.push(`
-        <span class="az-alert-pill pill-warning" title="Agent queues currently offline">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect></svg>
-          ${alerts.offlineAgentsCount} Offline Agent${alerts.offlineAgentsCount > 1 ? 's' : ''}
-        </span>
-      `);
-    }
-
-    if (alerts.failedMainDeployments > 0) {
-      badges.push(`
-        <span class="az-alert-pill" title="Failed deployment on production/main branch">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-          ${alerts.failedMainDeployments} Failed Main-Branch Run${alerts.failedMainDeployments > 1 ? 's' : ''}
-        </span>
-      `);
-    }
-
-    if (badges.length > 0) {
-      list.innerHTML = badges.join('');
-      banner.classList.remove('hidden');
-    } else {
+    if (banner) {
       banner.classList.add('hidden');
-      list.innerHTML = '';
+      banner.style.display = 'none';
     }
   },
 

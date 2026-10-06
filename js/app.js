@@ -355,14 +355,19 @@ window.HubApp = {
       });
     });
 
-    // Step 5 Execution Buttons
+    // Step 5 Execution Buttons & Enter Key Support
     document.getElementById('btnInspectRepo')?.addEventListener('click', () => self.execRepoInspect());
     document.getElementById('btnFetchAccess')?.addEventListener('click', () => self.execAccessFetch());
+    document.getElementById('targetAccessUserQuery')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.execAccessFetch(); });
     document.getElementById('btnFetchActivity')?.addEventListener('click', () => self.execActivityFetch());
+    document.getElementById('targetUserQuery')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.execActivityFetch(); });
+    document.getElementById('userTimeframeDays')?.addEventListener('change', () => self.execActivityFetch());
     document.getElementById('btnFetchPipelines')?.addEventListener('click', () => self.execPipelineFetch());
     document.getElementById('btnFetchWorkItems')?.addEventListener('click', () => self.execWorkItemsFetch());
+    document.getElementById('targetWorkItemUser')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.execWorkItemsFetch(); });
     document.getElementById('btnFetchAgentPools')?.addEventListener('click', () => self.execAgentPoolsFetch());
     document.getElementById('btnFetchServiceConnections')?.addEventListener('click', () => self.execServiceConnectionsFetch());
+    document.getElementById('targetScQuery')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.execServiceConnectionsFetch(); });
 
     // Pagination / "See More" Buttons
     document.getElementById('btnMoreRepos')?.addEventListener('click', () => window.RepoModule.renderBranches(true));
@@ -883,7 +888,19 @@ window.HubApp = {
   async connectAndGoToStep3() {
     const org = this.getOrg();
     const pat = this.getPat();
-    if (!org || !pat) return this.showModal('Please enter both Organization Name and Personal Access Token (PAT).');
+
+    if (!org && !pat) {
+      document.getElementById('targetOrg')?.focus();
+      return this.showModal('Please enter both Organization Name and Personal Access Token (PAT).');
+    }
+    if (!org) {
+      document.getElementById('targetOrg')?.focus();
+      return this.showModal('Please enter the Organization Name.');
+    }
+    if (!pat) {
+      document.getElementById('targetPat')?.focus();
+      return this.showModal('Please enter your Personal Access Token (PAT).');
+    }
 
     if (document.getElementById('chkRememberCreds')?.checked) {
       localStorage.setItem('ado_saved', 'true');
@@ -1051,7 +1068,7 @@ window.HubApp = {
       <tr>
         <td colspan="7" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          Select a repository scope and click <strong>"Trigger / Inspect Repositories"</strong> button above to load branch details.
+          Select a repository scope and click <strong>"Inspect Repositories"</strong> button above to load branch details.
         </td>
       </tr>
     `);
@@ -1060,7 +1077,7 @@ window.HubApp = {
       <tr>
         <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-          Select a repository scope and click <strong>"Trigger / Inspect Policies"</strong> button above to load branch policies.
+          Select a repository scope and click <strong>"Inspect Policies"</strong> button above to load branch policies.
         </td>
       </tr>
     `);
@@ -1069,7 +1086,7 @@ window.HubApp = {
       <tr>
         <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>
-          Select a repository scope and click <strong>"Trigger / Inspect PRs"</strong> button above to load pull requests.
+          Select a repository scope and click <strong>"Inspect PRs"</strong> button above to load pull requests.
         </td>
       </tr>
     `);
@@ -1078,7 +1095,7 @@ window.HubApp = {
       <tr>
         <td colspan="5" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
-          Specify a user query (or leave blank for all) and click <strong>"Trigger / Scan Members"</strong> button above to load permissions.
+          Specify a user query (or leave blank for all) and click <strong>"Scan Members"</strong> button above to load permissions.
         </td>
       </tr>
     `);
@@ -1087,7 +1104,7 @@ window.HubApp = {
       <tr>
         <td colspan="5" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-          Enter a user email and timeframe, then click <strong>"Trigger / Search Activity"</strong> button above to load commit history.
+          Enter a user email and timeframe, then click <strong>"Search Activity"</strong> button above to load commit history.
         </td>
       </tr>
     `);
@@ -1095,7 +1112,7 @@ window.HubApp = {
     setHtml('userPrTableBody', `
       <tr>
         <td colspan="5" style="padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 12px;">
-          No pull request activity loaded. Click <strong>"Trigger / Search Activity"</strong> button above to inspect.
+          No pull request activity loaded. Click <strong>"Search Activity"</strong> button above to inspect.
         </td>
       </tr>
     `);
@@ -1104,7 +1121,7 @@ window.HubApp = {
       <tr>
         <td colspan="8" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-          Select your Runs Scope and click <strong>"Trigger / Fetch Runs"</strong> button above to load pipeline details.
+          Select your Runs Scope and click <strong>"Fetch Runs"</strong> button above to load pipeline details.
         </td>
       </tr>
     `);
@@ -1113,7 +1130,7 @@ window.HubApp = {
       <tr>
         <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-          Specify an assigned user (or leave blank for all) and click <strong>"Trigger / Query Work Items"</strong> button above to load backlog items.
+          Specify an assigned user (or leave blank for all) and click <strong>"Query Work Items"</strong> button above to load backlog items.
         </td>
       </tr>
     `);
@@ -1122,7 +1139,7 @@ window.HubApp = {
       <tr>
         <td colspan="7" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect></svg>
-          Select a pool type and click <strong>"Trigger / Scan Agent Pools"</strong> button above to load agent pools & queues.
+          Select a pool type and click <strong>"Scan Agent Pools"</strong> button above to load agent pools & queues.
         </td>
       </tr>
     `);
@@ -1131,7 +1148,7 @@ window.HubApp = {
       <tr>
         <td colspan="6" style="padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue);"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-          Select a service type and click <strong>"Trigger / Scan Endpoints"</strong> button above to load service connections.
+          Select a service type and click <strong>"Scan Endpoints"</strong> button above to load service connections.
         </td>
       </tr>
     `);
@@ -1182,15 +1199,15 @@ window.HubApp = {
           document.getElementById(id)?.classList.toggle('hidden', id !== config.substepId);
         });
 
-        // Contextual trigger button label for shared repo substep
+        // Contextual action button label for shared repo substep
         const btnRepoText = document.getElementById('btnInspectRepoText');
         if (btnRepoText) {
           if (viewKey === 'policies') {
-            btnRepoText.textContent = 'Trigger / Inspect Policies';
+            btnRepoText.textContent = 'Inspect Policies';
           } else if (viewKey === 'prs') {
-            btnRepoText.textContent = 'Trigger / Inspect PRs';
+            btnRepoText.textContent = 'Inspect PRs';
           } else {
-            btnRepoText.textContent = 'Trigger / Inspect Repositories';
+            btnRepoText.textContent = 'Inspect Repositories';
           }
         }
       } else {
@@ -1278,7 +1295,7 @@ window.HubApp = {
 
     const repoInput = document.getElementById('repoSelect')?.value;
     if (!repoInput) {
-      return this.showModal('Please select a Repository from the Repository Scope dropdown before clicking Trigger.');
+      return this.showModal('Please select a Repository from the Repository Scope dropdown before inspecting.');
     }
 
     try {

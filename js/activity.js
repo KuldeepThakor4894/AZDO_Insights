@@ -11,8 +11,29 @@ window.ActivityModule = {
   async fetch(org, project, pat, query, days, cachedRepos) {
     this.currentOrg = org;
     this.currentProject = project;
+    this.currentQuery = (query || '').trim();
     const auth = 'Basic ' + btoa(':' + pat);
-    const qLower = (query || '').trim().toLowerCase();
+    const qRaw = (query || '').trim().toLowerCase();
+
+    // Prepare search tokens (full query, alias before @, individual name words)
+    const qTokens = [];
+    if (qRaw) {
+      qTokens.push(qRaw);
+      if (qRaw.includes('@')) {
+        const alias = qRaw.split('@')[0].trim();
+        if (alias && alias.length >= 2) {
+          qTokens.push(alias);
+          alias.split(/[\._\-]/).forEach(p => {
+            if (p.length >= 2) qTokens.push(p);
+          });
+        }
+      } else {
+        qRaw.split(/[\s\._\-]+/).forEach(p => {
+          if (p.length >= 2) qTokens.push(p);
+        });
+      }
+    }
+
     let userCommits = [];
     let userPRs = [];
     let authorCounts = {};
@@ -32,21 +53,53 @@ window.ActivityModule = {
       try {
         const repoData = await window.HubApp.fetchAdo(
           org,
-          `${encodeURIComponent(project)}/_apis/git/repositories?api-version=6.0`,
+          `${encodeURIComponent(project)}/_apis/git/repositories?api-version=7.1-preview.1`,
           auth
         );
-        targetRepos = repoData.value || [];
+        targetRepos = repoData?.value || [];
       } catch (e) {
-        targetRepos = [];
+        try {
+          const repoDataFallback = await window.HubApp.fetchAdo(
+            org,
+            `${encodeURIComponent(project)}/_apis/git/repositories?api-version=6.0`,
+            auth
+          );
+          targetRepos = repoDataFallback?.value || [];
+        } catch (e2) {
+          targetRepos = [];
+        }
       }
     }
 
     const isUserMatch = (userObj) => {
-      if (!qLower) return true;
+      if (!qRaw) return true;
       if (!userObj) return false;
-      const name = (userObj.displayName || userObj.name || '').toLowerCase();
-      const email = (userObj.uniqueName || userObj.mailAddress || userObj.email || '').toLowerCase();
-      return name.includes(qLower) || email.includes(qLower);
+
+      let name = '';
+      let email = '';
+      let uniqueName = '';
+
+      if (typeof userObj === 'string') {
+        name = userObj.toLowerCase();
+      } else {
+        name = (userObj.displayName || userObj.name || '').toLowerCase();
+        email = (userObj.email || userObj.mailAddress || '').toLowerCase();
+        uniqueName = (userObj.uniqueName || userObj.principalName || '').toLowerCase();
+      }
+
+      // 1. Direct substring match with full search query
+      if (name && (name.includes(qRaw) || qRaw.includes(name))) return true;
+      if (email && (email.includes(qRaw) || qRaw.includes(email))) return true;
+      if (uniqueName && (uniqueName.includes(qRaw) || qRaw.includes(uniqueName))) return true;
+
+      // 2. Token match (alias before @, first name, last name)
+      for (const t of qTokens) {
+        if (name && name.includes(t)) return true;
+        if (email && email.includes(t)) return true;
+        if (uniqueName && uniqueName.includes(t)) return true;
+      }
+
+      return false;
     };
 
     const addPullRequest = (pr, repoName) => {
@@ -83,40 +136,57 @@ window.ActivityModule = {
       }
     };
 
-    // 2. Fetch Project-Level Pull Requests
-    const prStatuses = ['all', 'completed', 'active', 'abandoned'];
-    await Promise.all(
-      prStatuses.map(async (status) => {
-        try {
-          const prProjectUrl = `${encodeURIComponent(project)}/_apis/git/pullrequests?searchCriteria.status=${status}&$top=500&api-version=6.0`;
-          const prData = await window.HubApp.fetchAdo(org, prProjectUrl, auth);
-          (prData.value || []).forEach(p => addPullRequest(p, p.repository?.name));
-        } catch (err) {
-          console.warn(`Project-level PR fetch (${status}) notice:`, err);
-        }
-      })
-    );
+    // 1. Fetch Project-Level Pull Requests (attempt project-wide query first)
+    try {
+      const prProjectUrl = `${encodeURIComponent(project)}/_apis/git/pullrequests?searchCriteria.status=all&$top=200&api-version=6.0`;
+      const prData = await window.HubApp.fetchAdo(org, prProjectUrl, auth);
+      (prData?.value || []).forEach(p => addPullRequest(p, p.repository?.name));
+    } catch (err) {
+      // Per-repository scan below will catch all PRs reliably
+    }
 
-    // 3. Scan Commits & Repository-Level PR Fallback
+    // 2. Scan Commits & Per-Repository Pull Requests in parallel
     const repoTasks = targetRepos.map(async (r) => {
+      // Per-repo PR scan guarantees coverage across all ADO server versions
+      const prTask = (async () => {
+        try {
+          const repoPrUrl = `${encodeURIComponent(project)}/_apis/git/repositories/${r.id}/pullrequests?searchCriteria.status=all&$top=100&api-version=6.0`;
+          const prRes = await window.HubApp.fetchAdo(org, repoPrUrl, auth);
+          (prRes?.value || []).forEach(p => addPullRequest(p, r.name));
+        } catch (pErr) {
+          /* ignore per-repo PR failures */
+        }
+      })();
+
+      // Commits scan without server-side author filter (server filter expects name, not email)
       const commitsTask = (async () => {
         try {
-          let commitsUrl = `${encodeURIComponent(project)}/_apis/git/repositories/${r.id}/commits?$top=200${fromDateStr}&api-version=6.0`;
-          if (qLower && qLower.includes('@')) {
-            commitsUrl += `&searchCriteria.author=${encodeURIComponent(qLower)}`;
+          let rawCommits = [];
+          let commitsUrl = `${encodeURIComponent(project)}/_apis/git/repositories/${r.id}/commits?$top=250&api-version=6.0`;
+          if (fromDateStr) {
+            commitsUrl += fromDateStr;
           }
 
           const cRes = await window.HubApp.fetchAdo(org, commitsUrl, auth);
-          const rawCommits = cRes.value || [];
+          rawCommits = cRes?.value || [];
+
+          // Resilient fallback: if server fromDate query returned empty, query without server date and filter client-side
+          if (rawCommits.length === 0 && fromDateStr) {
+            const fallbackUrl = `${encodeURIComponent(project)}/_apis/git/repositories/${r.id}/commits?$top=100&api-version=6.0`;
+            const fRes = await window.HubApp.fetchAdo(org, fallbackUrl, auth);
+            rawCommits = fRes?.value || [];
+          }
 
           rawCommits.forEach(c => {
             const author = c.author || {};
-            const d = author.date ? new Date(author.date) : null;
+            const committer = c.committer || {};
+            const d = author.date ? new Date(author.date) : (committer.date ? new Date(committer.date) : null);
             if (fromDate && d && d < fromDate) return;
 
-            if (isUserMatch(author)) {
+            if (isUserMatch(author) || isUserMatch(committer)) {
               activeReposSet.add(r.name);
-              const authorName = author.name || 'Unknown';
+              const authorObj = isUserMatch(author) ? author : (committer.name ? committer : author);
+              const authorName = authorObj.name || committer.name || 'Unknown';
               authorCounts[authorName] = (authorCounts[authorName] || 0) + 1;
 
               userCommits.push({
@@ -125,7 +195,7 @@ window.ActivityModule = {
                 commitId: c.commitId ? c.commitId.substring(0, 8) : 'HEAD',
                 fullCommitId: c.commitId || '',
                 author: authorName,
-                authorEmail: author.email || '',
+                authorEmail: authorObj.email || committer.email || '',
                 date: d ? d.toLocaleDateString() : 'N/A',
                 rawDate: d ? d.getTime() : 0,
                 msg: c.comment || '',
@@ -139,7 +209,7 @@ window.ActivityModule = {
         }
       })();
 
-      return commitsTask;
+      return Promise.all([prTask, commitsTask]);
     });
 
     await Promise.all(repoTasks);
@@ -154,7 +224,7 @@ window.ActivityModule = {
 
     // Update KPIs
     window.HubApp.setKpis(
-      query || project,
+      this.currentQuery || project,
       'Commits Found',
       this.commits.length,
       'Pull Requests',
@@ -180,7 +250,12 @@ window.ActivityModule = {
     if (!append) tbody.innerHTML = '';
 
     if (this.commits.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">No commits found for this user in selected timeframe.</td></tr>`;
+      const qText = this.currentQuery ? ` matching "${this.currentQuery}"` : '';
+      tbody.innerHTML = `<tr><td colspan="5" style="padding: 36px 16px; text-align: center; color: var(--text-muted); font-size: 13px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 28px; height: 28px; margin: 0 auto 10px; display: block; color: var(--azure-blue); opacity: 0.6;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+        No commits found${qText} in the selected timeframe.
+        <div style="font-size: 11.5px; margin-top: 6px; color: var(--text-muted); opacity: 0.85;">Tip: Try searching by user alias or display name, expand the timeframe, or leave blank to view all recent commits.</div>
+      </td></tr>`;
       document.getElementById('seeMoreCommitsContainer')?.classList.add('hidden');
       return;
     }
@@ -217,7 +292,10 @@ window.ActivityModule = {
     if (!tbody) return;
 
     if (this.prs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-slate-400">No pull requests found.</td></tr>`;
+      const qText = this.currentQuery ? ` matching "${this.currentQuery}"` : '';
+      tbody.innerHTML = `<tr><td colspan="5" style="padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 12px;">
+        No pull requests found${qText} in the selected timeframe.
+      </td></tr>`;
       return;
     }
 
