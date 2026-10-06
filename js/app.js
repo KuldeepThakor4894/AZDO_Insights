@@ -351,15 +351,12 @@ window.HubApp = {
           self.switchView(view);
           if (view === 'dashboard') {
             self.execDashboardFetch();
-          } else if (view === 'repositories') {
-            self.handleRepoMenuSelect();
           }
         }
       });
     });
 
     // Step 5 Execution Buttons & Enter Key Support
-    document.getElementById('repoSelect')?.addEventListener('change', () => self.execRepoInspect());
     document.getElementById('btnInspectRepo')?.addEventListener('click', () => self.execRepoInspect());
     document.getElementById('btnFetchAccess')?.addEventListener('click', () => self.execAccessFetch());
     document.getElementById('targetAccessUserQuery')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.execAccessFetch(); });
@@ -1205,6 +1202,22 @@ window.HubApp = {
     const repoDropdown = document.getElementById('repoSelect');
     if (repoDropdown) repoDropdown.value = '';
 
+    // Reset KPI summary cards to placeholder
+    ['kpi-1-val', 'kpi-2-val', 'kpi-3-val', 'kpi-4-val', 'kpi-5-val'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '-';
+    });
+
+    if (window.RepoModule) {
+      window.RepoModule.branches = [];
+      window.RepoModule.prs = [];
+      window.RepoModule.policies = [];
+      window.RepoModule.currentRepoLabel = '';
+      window.RepoModule.staleBranchesCount = 0;
+      window.RepoModule.activePrsCount = 0;
+      window.RepoModule.completedPrsCount = 0;
+    }
+
     const setHtml = (id, html) => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = html;
@@ -1386,7 +1399,7 @@ window.HubApp = {
 
     // Refresh KPI strip specifically for Repositories & Branches if repo data is present
     if (viewKey === 'repositories') {
-      if (window.RepoModule && typeof window.RepoModule.updateKpis === 'function') {
+      if (window.RepoModule && typeof window.RepoModule.updateKpis === 'function' && window.RepoModule.branches && window.RepoModule.branches.length > 0) {
         window.RepoModule.updateKpis();
       }
     }
@@ -1394,26 +1407,6 @@ window.HubApp = {
     // Trigger auto-fetch ONLY when on dashboard overview
     if (project && forceReload && this.currentView === 'dashboard') {
       this.triggerActiveInspect();
-    }
-  },
-
-  handleRepoMenuSelect() {
-    const project = document.getElementById('projectSelect')?.value;
-    if (!project) return;
-
-    if (window.RepoModule && window.RepoModule.branches && window.RepoModule.branches.length > 0) {
-      window.RepoModule.updateKpis();
-      window.RepoModule.renderBranches(false);
-    } else {
-      const repoDropdown = document.getElementById('repoSelect');
-      if (repoDropdown && !repoDropdown.value) {
-        if (this.cachedRepos && this.cachedRepos.length > 0) {
-          repoDropdown.value = this.cachedRepos[0].name;
-        } else {
-          repoDropdown.value = '-- All Repositories --';
-        }
-      }
-      this.execRepoInspect();
     }
   },
 
