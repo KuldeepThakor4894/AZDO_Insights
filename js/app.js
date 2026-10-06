@@ -264,6 +264,10 @@ window.HubApp = {
   },
 
   init() {
+    window.PipelinesModule = window.PipelineModule;
+    window.WorkItemsModule = window.WorkItemModule;
+    window.AgentPoolsModule = window.AgentPoolModule;
+
     window.BladeController.init();
     this.initTheme();
     this.bindEvents();
@@ -371,14 +375,14 @@ window.HubApp = {
     document.getElementById('targetScQuery')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') self.execServiceConnectionsFetch(); });
 
     // Pagination / "See More" Buttons
-    document.getElementById('btnMoreRepos')?.addEventListener('click', () => window.RepoModule.renderBranches(true));
-    document.getElementById('btnMorePrs')?.addEventListener('click', () => window.RepoModule.renderPrs(true));
-    document.getElementById('btnMoreAccess')?.addEventListener('click', () => window.AccessModule.render(true));
-    document.getElementById('btnMoreCommits')?.addEventListener('click', () => window.ActivityModule.renderCommits(true));
-    document.getElementById('btnMorePipelines')?.addEventListener('click', () => window.PipelinesModule.render(true));
-    document.getElementById('btnMoreWorkItems')?.addEventListener('click', () => window.WorkItemsModule.render(true));
-    document.getElementById('btnMoreAgentPools')?.addEventListener('click', () => window.AgentPoolsModule.render(true));
-    document.getElementById('btnMoreServiceConnections')?.addEventListener('click', () => window.ServiceConnectionModule.render(true));
+    document.getElementById('btnMoreRepos')?.addEventListener('click', () => window.RepoModule?.renderBranches(true));
+    document.getElementById('btnMorePrs')?.addEventListener('click', () => window.RepoModule?.renderPrs(true));
+    document.getElementById('btnMoreAccess')?.addEventListener('click', () => window.AccessModule?.render(true));
+    document.getElementById('btnMoreCommits')?.addEventListener('click', () => window.ActivityModule?.renderCommits(true));
+    document.getElementById('btnMorePipelines')?.addEventListener('click', () => (window.PipelineModule || window.PipelinesModule)?.render(true));
+    document.getElementById('btnMoreWorkItems')?.addEventListener('click', () => (window.WorkItemModule || window.WorkItemsModule)?.render(true));
+    document.getElementById('btnMoreAgentPools')?.addEventListener('click', () => (window.AgentPoolModule || window.AgentPoolsModule)?.render(true));
+    document.getElementById('btnMoreServiceConnections')?.addEventListener('click', () => window.ServiceConnectionModule?.render(true));
 
     // Quick Action Bar Buttons in Card Header
     document.getElementById('btnQuickInspect')?.addEventListener('click', () => {
@@ -509,6 +513,7 @@ window.HubApp = {
     this.isOrgAdmin = false;
     this.currentUser = null;
     this.cachedProjects = [];
+    this.cachedRepos = [];
 
     if (window.DashboardModule?.reset) {
       window.DashboardModule.reset();
@@ -568,6 +573,7 @@ window.HubApp = {
     this.isOrgAdmin = false;
     this.currentUser = null;
     this.cachedProjects = [];
+    this.cachedRepos = [];
 
     // Reset UI state and dashboard
     if (window.DashboardModule?.reset) {
@@ -654,6 +660,75 @@ window.HubApp = {
     localStorage.removeItem('ado_pat');
 
     this.updateOrgPath();
+  },
+
+  resetDataAndTables() {
+    this.resetTablePlaceholders();
+
+    if (window.RepoModule) {
+      window.RepoModule.branches = [];
+      window.RepoModule.prs = [];
+      window.RepoModule.policies = [];
+      window.RepoModule.currentRepoLabel = '';
+      window.RepoModule.staleBranchesCount = 0;
+      window.RepoModule.activePrsCount = 0;
+      window.RepoModule.completedPrsCount = 0;
+    }
+
+    if (window.AccessModule) {
+      window.AccessModule.items = [];
+      window.AccessModule.index = 0;
+      window.AccessModule.currentProject = '';
+      window.AccessModule.currentOrg = '';
+    }
+
+    if (window.ActivityModule) {
+      window.ActivityModule.commits = [];
+      window.ActivityModule.commitIndex = 0;
+      window.ActivityModule.prs = [];
+      window.ActivityModule.prIndex = 0;
+      window.ActivityModule.currentProject = '';
+      window.ActivityModule.currentOrg = '';
+    }
+
+    const pipeMod = window.PipelineModule || window.PipelinesModule;
+    if (pipeMod) {
+      pipeMod.runs = [];
+      pipeMod.index = 0;
+      pipeMod.currentProject = '';
+      pipeMod.currentOrg = '';
+    }
+
+    const wiMod = window.WorkItemModule || window.WorkItemsModule;
+    if (wiMod) {
+      wiMod.items = [];
+      wiMod.index = 0;
+      wiMod.currentProject = '';
+      wiMod.currentOrg = '';
+    }
+
+    const poolMod = window.AgentPoolModule || window.AgentPoolsModule;
+    if (poolMod) {
+      poolMod.pools = [];
+      poolMod.index = 0;
+      poolMod.currentProject = '';
+      poolMod.currentOrg = '';
+    }
+
+    if (window.ServiceConnectionModule) {
+      window.ServiceConnectionModule.items = [];
+      window.ServiceConnectionModule.index = 0;
+      window.ServiceConnectionModule.currentProject = '';
+      window.ServiceConnectionModule.currentOrg = '';
+    }
+
+    if (window.DashboardModule?.reset) {
+      window.DashboardModule.reset();
+    }
+
+    if (typeof this.populateDashboardProjectMenu === 'function') {
+      this.populateDashboardProjectMenu();
+    }
   },
 
   getOrg() {
