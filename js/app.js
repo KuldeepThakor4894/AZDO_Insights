@@ -333,7 +333,8 @@ window.HubApp = {
     // Step Navigation
     document.getElementById('btnStartWizard')?.addEventListener('click', () => self.goToScreen(2));
     document.getElementById('btnBackToStep1')?.addEventListener('click', () => self.goToScreen(1));
-    document.getElementById('btnSwitchOrg')?.addEventListener('click', () => self.goToScreen(2));
+    document.getElementById('btnSwitchOrg')?.addEventListener('click', () => self.switchOrg());
+    document.getElementById('btnTopSwitchOrg')?.addEventListener('click', () => self.switchOrg());
     document.getElementById('btnLogout')?.addEventListener('click', () => self.logout());
     document.getElementById('btnLogoHome')?.addEventListener('click', () => self.goToScreen(1));
 
@@ -521,8 +522,84 @@ window.HubApp = {
       statusBar.classList.add('hidden');
     }
 
+    // Clear connect screen credentials so future login is clean
+    this.clearAuthInputs();
+
     // Redirect to main home page (Azure DevOps Intelligence Hub landing page - Screen 1)
     this.goToScreen(1);
+  },
+
+  switchOrg() {
+    this.isOrgAdmin = false;
+    this.currentUser = null;
+    this.cachedProjects = [];
+
+    // Reset UI state and dashboard
+    if (window.DashboardModule?.reset) {
+      window.DashboardModule.reset();
+    }
+
+    // Reset project selector
+    const select = document.getElementById('projectSelect');
+    if (select) {
+      select.innerHTML = '<option value="">-- Choose Project --</option>';
+      select.disabled = false;
+    }
+
+    // Reset connection header text
+    const connText = document.getElementById('suiteConnectionText');
+    if (connText) {
+      connText.textContent = 'Not Connected';
+    }
+    const orgCrumb = document.getElementById('suiteBreadcrumbOrg');
+    if (orgCrumb) {
+      orgCrumb.textContent = 'dev.azure.com';
+    }
+    const orgCode = document.getElementById('portalOrgCode');
+    if (orgCode) {
+      orgCode.textContent = 'dev.azure.com';
+    }
+
+    // Hide status bar
+    const statusBar = document.getElementById('statusBar');
+    if (statusBar) {
+      statusBar.classList.add('hidden');
+    }
+
+    // Clear all credentials and form inputs on Connect to Azure DevOps Service page (Screen 2)
+    this.clearAuthInputs();
+
+    // Redirect to Screen 2 (Connect to Azure DevOps Service)
+    this.goToScreen(2);
+
+    // Focus the organization input
+    setTimeout(() => {
+      document.getElementById('targetOrg')?.focus();
+    }, 50);
+  },
+
+  clearAuthInputs() {
+    const orgInput = document.getElementById('targetOrg');
+    if (orgInput) orgInput.value = '';
+
+    const patInput = document.getElementById('targetPat');
+    if (patInput) patInput.value = '';
+
+    const chk = document.getElementById('chkRememberCreds');
+    if (chk) chk.checked = false;
+
+    const btn = document.getElementById('btnConnect');
+    if (btn) {
+      btn.innerHTML = `Connect Workspace <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>`;
+      btn.disabled = false;
+    }
+
+    // Clear remembered credentials from storage
+    localStorage.removeItem('ado_saved');
+    localStorage.removeItem('ado_org');
+    localStorage.removeItem('ado_pat');
+
+    this.updateOrgPath();
   },
 
   getOrg() {
