@@ -194,7 +194,7 @@ window.RepoModule = {
     const staleBranchesCount = this.branches.filter(b => b.isStale).length;
     const activePrsCount = this.prs.filter(p => p.status === 'active').length;
     const completedPrsCount = this.prs.filter(p => p.status === 'completed').length;
-    const repoLabel = targetRepos.length === 1 ? targetRepos[0].name : (selectedRepo && selectedRepo !== '-- All Repositories --' ? selectedRepo : `${project} (${targetRepos.length} Repos)`);
+    const repoLabel = targetRepos.length === 1 ? targetRepos[0].name : (targetRepoInput && targetRepoInput !== '-- All Repositories --' ? targetRepoInput : `${project} (${targetRepos.length} Repos)`);
 
     this.currentRepoLabel = repoLabel;
     this.staleBranchesCount = staleBranchesCount;
